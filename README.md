@@ -9,6 +9,34 @@ This tool analyzes two signals that engineering teams care about:
 It pulls GitHub repository data, classifies workflow failures from logs and metadata,
 and generates reports that are easier to use in weekly updates, internal reviews, or portfolio demos.
 
+## Demo output
+
+### CI failure trend
+
+![CI failure trend](assets/ci_failure_trend.png)
+
+### Most unstable workflows
+
+![Most unstable workflows](assets/unstable_workflows.png)
+
+## Sample result
+
+Real run against `microsoft/vscode`:
+- 9 PRs inspected
+- 1 merged PR
+- average merge time: 9.65 hours
+- 17 completed workflow runs
+- workflow success rate: 17.65%
+- dominant failure type: `build_failure`
+- most unstable workflow: `Telemetry`
+
+## What makes this useful
+
+- combines PR efficiency analysis and CI stability analysis in one workflow
+- classifies CI failures from logs instead of only counting pass/fail states
+- generates weekly-style digest output instead of raw metrics only
+- validated on a real public repository, not just mocked sample data
+
 ## Why this project
 
 Engineering efficiency work is often described at a high level, but teams still need concrete answers to questions like:
