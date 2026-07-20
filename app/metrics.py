@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean, median
 
-from app.models import PullRequestRecord, WorkflowRunRecord
+from app.models import PullRequestRecord, WorkflowRunRecord, workflow_outcome
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,10 @@ class PullRequestMetricsSummary:
 @dataclass(frozen=True)
 class WorkflowMetricsSummary:
     total_runs: int
+    successful_runs: int
     failed_runs: int
+    cancelled_runs: int
+    excluded_runs: int
     success_rate: float | None
     avg_duration_minutes: float | None
     failure_categories: list[tuple[str, int]]
@@ -134,13 +137,15 @@ def build_workflow_rows(records: list[WorkflowRunRecord]) -> list[dict[str, obje
 
 def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetricsSummary:
     completed_records = [record for record in records if record.status == "completed"]
-    success_runs = [
-        record for record in completed_records if (record.conclusion or "").lower() == "success"
-    ]
+    outcomes = [workflow_outcome(record.conclusion) for record in completed_records]
+    successful_count = outcomes.count("successful")
+    failed_count = outcomes.count("failed")
+    cancelled_count = outcomes.count("cancelled")
+    excluded_count = outcomes.count("excluded")
     failed_runs = [
         record
         for record in completed_records
-        if (record.conclusion or "").lower() not in {"success", "neutral", "skipped"}
+        if workflow_outcome(record.conclusion) == "failed"
     ]
     durations = [
         record.duration_minutes
@@ -164,12 +169,16 @@ def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetrics
     )[:5]
 
     success_rate = None
-    if completed_records:
-        success_rate = round(len(success_runs) / len(completed_records) * 100, 2)
+    denominator = successful_count + failed_count
+    if denominator:
+        success_rate = round(successful_count / denominator * 100, 2)
 
     return WorkflowMetricsSummary(
         total_runs=len(completed_records),
-        failed_runs=len(failed_runs),
+        successful_runs=successful_count,
+        failed_runs=failed_count,
+        cancelled_runs=cancelled_count,
+        excluded_runs=excluded_count,
         success_rate=success_rate,
         avg_duration_minutes=_average_or_none(durations),
         failure_categories=failure_categories,
@@ -182,8 +191,7 @@ def build_daily_failure_trend(records: list[WorkflowRunRecord]):
         record
         for record in records
         if record.status == "completed"
-        and record.failure_category not in {"passed", "cancelled"}
-        and record.conclusion
+        and workflow_outcome(record.conclusion) == "failed"
     ]
 
     if not failed_records:
@@ -205,8 +213,7 @@ def build_failed_workflow_breakdown(records: list[WorkflowRunRecord]):
         record
         for record in records
         if record.status == "completed"
-        and record.failure_category not in {"passed", "cancelled"}
-        and record.conclusion
+        and workflow_outcome(record.conclusion) == "failed"
     ]
     if not failed_records:
         return []
@@ -240,8 +247,7 @@ def build_weekly_ci_digest(records: list[WorkflowRunRecord]) -> WeeklyCiDigest:
     for record in records:
         if (
             record.status != "completed"
-            or record.failure_category in {"passed", "cancelled"}
-            or not record.conclusion
+            or workflow_outcome(record.conclusion) != "failed"
         ):
             continue
         category_counts[record.failure_category] = (

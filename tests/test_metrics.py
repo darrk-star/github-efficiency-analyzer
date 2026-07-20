@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from app.ci_failure_analysis import analyze_failure_log
 from app.metrics import (
     build_daily_failure_trend,
@@ -8,11 +10,29 @@ from app.metrics import (
     summarize_pull_requests,
     summarize_workflow_runs,
 )
-from app.models import PullRequestRecord, WorkflowRunRecord
+from app.models import PullRequestRecord, WorkflowRunRecord, workflow_outcome
 
 
 def _dt(hour: int) -> datetime:
     return datetime(2026, 6, 1, hour, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "expected"),
+    [
+        ("success", "successful"),
+        ("failure", "failed"),
+        ("timed_out", "failed"),
+        ("action_required", "failed"),
+        ("cancelled", "cancelled"),
+        ("neutral", "excluded"),
+        ("skipped", "excluded"),
+        ("stale", "excluded"),
+        (None, "excluded"),
+    ],
+)
+def test_workflow_outcome_groups_github_conclusions(conclusion, expected):
+    assert workflow_outcome(conclusion) == expected
 
 
 def test_summarize_pull_requests_handles_merged_and_open_records():
@@ -126,11 +146,40 @@ def test_summarize_workflow_runs_groups_failures_and_success_rate():
     summary = summarize_workflow_runs(records)
 
     assert summary.total_runs == 3
-    assert summary.failed_runs == 2
-    assert summary.success_rate == 33.33
+    assert summary.successful_runs == 1
+    assert summary.failed_runs == 1
+    assert summary.cancelled_runs == 1
+    assert summary.excluded_runs == 0
+    assert summary.success_rate == 50.0
     assert summary.avg_duration_minutes == 40.0
-    assert summary.failure_categories == [("cancelled", 1), ("test_failure", 1)]
-    assert summary.top_failed_workflows == [("CI", 1), ("Lint", 1)]
+    assert summary.failure_categories == [("test_failure", 1)]
+    assert summary.top_failed_workflows == [("CI", 1)]
+
+
+def test_summarize_workflow_runs_preserves_zero_success_rate():
+    records = [
+        WorkflowRunRecord(
+            id=1,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="failure",
+            created_at=_dt(0),
+            updated_at=_dt(1),
+            run_started_at=_dt(0),
+            actor="alice",
+            branch="main",
+            duration_minutes=20.0,
+            html_url="https://example.com/runs/1",
+            jobs_url="https://example.com/runs/1/jobs",
+            failure_category="test_failure",
+            failure_detail="pytest failed",
+        )
+    ]
+
+    summary = summarize_workflow_runs(records)
+
+    assert summary.success_rate == 0.0
 
 
 def test_analyze_failure_log_detects_dependency_failure():
