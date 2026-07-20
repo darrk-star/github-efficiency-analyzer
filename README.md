@@ -1,122 +1,187 @@
 # GitHub Efficiency Analyzer
 
-A Python project for engineering productivity analysis.
+A Python CLI that turns GitHub pull request and Actions data into explainable engineering-efficiency reports. It demonstrates resilient REST API integration, explicit metric semantics, deterministic CI log classification, typed domain models, automated tests, and CI quality checks.
 
-This tool analyzes two signals that engineering teams care about:
-- pull request collaboration efficiency
-- GitHub Actions stability and CI failure patterns
+This is a focused portfolio project for Python backend and engineering productivity roles. It is designed to be easy to run, inspect, test, and discuss in an interview.
 
-It pulls GitHub repository data, classifies workflow failures from logs and metadata,
-and generates reports that are easier to use in weekly updates, internal reviews, or portfolio demos.
+## Why This Project
 
-## Demo output
+Engineering teams often need answers that are more specific than a raw GitHub activity feed:
 
-### CI failure trend
+- How long do pull requests take to merge?
+- Which workflows fail repeatedly?
+- Are failures caused by tests, builds, dependencies, permissions, or infrastructure?
+- Can a weekly report explain what deserves attention next?
 
-![CI failure trend](assets/ci_failure_trend.png)
+The analyzer combines pull request metrics with GitHub Actions stability analysis and produces CSV, Markdown, and chart outputs from one reproducible CLI command.
 
-### Most unstable workflows
+## Architecture
 
-![Most unstable workflows](assets/unstable_workflows.png)
+```text
+GitHub REST API
+  -> resilient collection and pagination
+  -> typed PR/workflow records
+  -> pure metrics and deterministic failure classification
+  -> CSV, Markdown, and PNG reports
+```
 
-## Sample result
+| Module | Responsibility |
+| --- | --- |
+| `app/github_client.py` | GitHub HTTP calls, pagination, retries, rate-limit errors, and payload translation |
+| `app/models.py` | Immutable domain records and shared workflow outcome semantics |
+| `app/ci_failure_analysis.py` | Explainable rule-based log classification and evidence extraction |
+| `app/metrics.py` | Pure PR/CI aggregation, trends, weekly digest, and CSV rows |
+| `app/report.py` | Markdown report rendering |
+| `app/charts.py` | Optional PNG charts from already-computed rows |
+| `app/main.py` | CLI validation, orchestration, output paths, and exit codes |
 
-Real run against `microsoft/vscode`:
-- 9 PRs inspected
-- 1 merged PR
-- average merge time: 9.65 hours
-- 17 completed workflow runs
-- workflow success rate: 17.65%
-- dominant failure type: `build_failure`
-- most unstable workflow: `Telemetry`
+## Engineering Decisions
 
-## What makes this useful
+### Correct pagination
 
-- combines PR efficiency analysis and CI stability analysis in one workflow
-- classifies CI failures from logs instead of only counting pass/fail states
-- generates weekly-style digest output instead of raw metrics only
-- validated on a real public repository, not just mocked sample data
+GitHub pull requests are returned sorted by `updated_at`, while this project defines its reporting window by `created_at`. The collector therefore filters matching PRs without stopping at the first old record. This avoids silently omitting a recently created PR that appears after an old PR updated recently.
 
-## Why this project
+Workflow runs are returned newest first by creation time, so workflow collection can stop safely at the first run outside the requested window.
 
-Engineering efficiency work is often described at a high level, but teams still need concrete answers to questions like:
-- How long do PRs take to merge?
-- Which workflows fail the most?
-- Are failures concentrated in tests, builds, dependencies, or infrastructure?
-- What should a weekly CI summary say without manual cleanup?
+### Fewer expensive requests
 
-This project turns those questions into a reproducible Python CLI workflow.
+Successful, neutral, skipped, and cancelled workflow runs do not need diagnostic logs. Jobs and log archives are fetched only for unsuccessful runs that need classification. This keeps the normal path cheaper and makes the trade-off visible in tests.
 
-## What it does
+### Explicit outcome semantics
 
-- Pulls recent PR data from a target GitHub repository
-- Computes PR metrics such as merge time, change size, comment volume, and active authors
-- Pulls GitHub Actions workflow run data
-- Classifies CI failures with a log-first approach and metadata fallback
-- Generates CSV, Markdown, and PNG outputs for reporting
-- Produces a weekly-style CI digest with risk statements and suggested actions
+Workflow conclusions are grouped consistently across summaries, trends, charts, and weekly digests:
 
-## Core features
+- `success`: successful
+- `failure`, `timed_out`, `action_required`, and other unsuccessful conclusions: failed
+- `cancelled`: cancelled and reported separately
+- `neutral`, `skipped`, `stale`, and missing conclusions: excluded from the success-rate denominator
 
-### PR analytics
-- total PR count
-- merged vs open PRs
-- average and median merge time
-- average PR size and changed files
-- top active authors
+The success rate is:
 
-### CI analytics
-- completed workflow run count
-- failed workflow run count
-- workflow success rate
-- most unstable workflows
-- failure type distribution
+```text
+successful / (successful + failed) * 100
+```
 
-### Failure classification
-- test failure
-- lint failure
-- build failure
-- dependency failure
-- infrastructure failure
-- permission failure
-- resource failure
-- timeout
-- unknown failure
+### Explainable failure diagnosis
 
-Classification uses GitHub Actions logs first. If logs are unavailable, the tool falls back to workflow job and step metadata.
+Failure classification is deterministic and rule-based. Each classification retains a concise evidence line and a source such as `logs`, `job_metadata`, `conclusion`, or `fallback`. A generic `exit code 1` is not treated as a test failure without stronger evidence. Unknown failures remain visible instead of being presented as confidently classified.
 
-## Generated outputs
+## Metrics
 
-- `outputs/pull_requests.csv`: pull request detail rows
-- `outputs/workflow_runs.csv`: workflow run detail rows
-- `outputs/summary.md`: combined PR and CI summary
-- `outputs/weekly_digest.md`: weekly-style CI digest
-- `outputs/ci_failure_trend.png`: daily CI failure trend chart
-- `outputs/unstable_workflows.png`: most unstable workflow chart
+### Pull requests
 
-## Real sample run
+- Total, merged, and open PR counts
+- Average and median merge time: `merged_at - created_at`
+- Average PR size: additions plus deletions
+- Average changed files
+- Average comment volume: issue comments plus review comments
+- Top authors by PR count
 
-Repository analyzed:
-- `microsoft/vscode`
+The PR time window is based on PR creation time. Requested reviewers are exported for context, but they are not presented as historical reviewer participation because the GitHub field does not reliably represent completed reviews.
 
-Command:
+### GitHub Actions
+
+- Total completed runs
+- Successful, failed, cancelled, and excluded run counts
+- Success rate using only successful and failed runs
+- Average workflow duration
+- Failure category distribution
+- Most frequently failing workflows
+- Daily failure trend and weekly digest
+
+## Outputs
+
+The command writes these files under `outputs/` by default:
+
+- `pull_requests.csv`
+- `workflow_runs.csv`
+- `summary.md`
+- `weekly_digest.md`
+- `ci_failure_trend.png`
+- `unstable_workflows.png`
+
+## Quick Start
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+```
+
+Add a GitHub token to `.env`:
+
+```env
+GITHUB_TOKEN=ghp_your_token_here
+```
+
+Run an analysis:
 
 ```powershell
 python -m app.main --repo microsoft/vscode --days 14 --limit 20
 ```
 
-Sample findings from a real run:
+The CLI validates `owner/name`, positive `--days`, and positive `--limit` before making network calls. GitHub authentication, not-found, rate-limit, timeout, and retry exhaustion errors return a non-zero exit code with an actionable message.
+
+## Quality Checks
+
+The same checks run locally and in `.github/workflows/ci.yml`:
+
+```powershell
+python -m pytest -q
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy app
+```
+
+HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
+
+## Sample Output
+
+The repository includes chart assets and a historical sample run against `microsoft/vscode` for demonstration. Sample values are illustrative and are not guaranteed to match current repository activity.
+
+Example command:
+
+```powershell
+python -m app.main --repo microsoft/vscode --days 14 --limit 20
+```
+
+Example findings from the historical sample:
+
 - 9 PRs inspected
 - 1 merged PR
-- average merge time: 9.65 hours
+- Average merge time: 9.65 hours
 - 17 completed workflow runs
-- workflow success rate: 17.65%
-- dominant failure type: `build_failure`
-- most unstable workflow: `Telemetry`
+- Workflow success rate: 17.65%
+- Dominant failure type: `build_failure`
 
-This matters because it shows the project is not only scaffolded code. It has already been run against a real public repository and produces interpretable output.
+## Tests and Current Verification
 
-## Project structure
+The local application test suite covers metric semantics, pagination, workflow request optimization, failure classification, retries, rate-limit/authentication errors, and CLI validation. The current branch has 38 passing tests and passes Python compilation checks.
+
+Ruff and mypy configuration is committed and runs in GitHub Actions. In the development environment used for this iteration, package installation for those tools was blocked by the machine's pip/index configuration, so their first authoritative run is expected to come from GitHub Actions.
+
+## Limitations and Roadmap
+
+This v1 intentionally does not include a web dashboard, database, scheduled jobs, organization-wide aggregation, or LLM-based classification. It also does not calculate historical first-review response time because that requires review-event history rather than the current requested-reviewers snapshot.
+
+Useful next steps would be:
+
+1. Persist snapshots for week-over-week comparisons.
+2. Add failure fingerprints for repeated incidents and likely flaky tests.
+3. Add workflow ownership and notification integrations.
+4. Add review-event metrics after introducing the required API collection.
+
+## Interview Talking Points
+
+- I found and fixed a pagination correctness issue caused by GitHub sorting PRs by update time while the report window uses creation time.
+- I reduced unnecessary GitHub API work by skipping jobs and log downloads for successful runs.
+- I made workflow success-rate semantics explicit instead of mixing cancelled and excluded runs into failures.
+- I added bounded retries and user-facing rate-limit/authentication errors around the HTTP client.
+- I used deterministic HTTP fixtures so correctness tests do not depend on live network state.
+- I kept failure diagnosis rule-based and explainable rather than claiming opaque classifier accuracy.
+
+## Project Structure
 
 ```text
 github-efficiency-analyzer/
@@ -130,69 +195,12 @@ github-efficiency-analyzer/
     models.py
     report.py
   tests/
+    test_github_client.py
+    test_main.py
     test_metrics.py
-  .env.example
-  .gitignore
+  .github/workflows/ci.yml
+  pyproject.toml
   requirements.txt
+  requirements-dev.txt
   README.md
 ```
-
-## Tech stack
-
-- Python 3.11
-- requests
-- python-dotenv
-- pandas
-- matplotlib
-- pytest
-
-## Quick start
-
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
-```
-
-Add your GitHub token to `.env`:
-
-```env
-GITHUB_TOKEN=your_token_here
-```
-
-Run the analyzer:
-
-```powershell
-python -m app.main --repo microsoft/vscode --days 30 --limit 50
-```
-
-## Example use cases
-
-- engineering weekly report generation
-- CI stability analysis for a repository
-- PR efficiency trend review
-- internal tooling practice for an engineering productivity role
-- portfolio demo for Python, APIs, and analytics-oriented backend work
-
-## Engineering highlights
-
-- modular Python package structure
-- CLI-driven workflow
-- graceful handling for missing chart dependencies
-- log-driven CI failure classification
-- local report generation without external services
-- test coverage for core metric logic
-
-## Future improvements
-
-- first review response time
-- author or team level grouping
-- richer failure pattern coverage
-- HTML dashboard
-- Google Sheets or Docs export
-- scheduled reporting
-
-## Resume-ready project description
-
-Built a Python-based GitHub engineering efficiency analyzer that collects pull request and GitHub Actions workflow data, classifies CI failures from logs, and generates CSV, Markdown, and chart-based reports for weekly engineering productivity review. Implemented PR merge-time metrics, workflow stability analysis, failure categorization, and automated digest generation, then validated the tool on a real public repository.
