@@ -1,6 +1,6 @@
 # GitHub Efficiency Analyzer
 
-A Python CLI that turns GitHub pull request and Actions data into explainable engineering-efficiency reports. It demonstrates resilient REST API integration, explicit metric semantics, deterministic CI log classification, typed domain models, automated tests, and CI quality checks.
+A Python CLI that turns GitHub pull request and Actions data into explainable engineering-efficiency reports. It demonstrates resilient REST API integration, explicit metric semantics, deterministic CI log classification, stable failure fingerprints, typed domain models, automated tests, and CI quality checks.
 
 This is a focused portfolio project for Python backend and engineering productivity roles. It is designed to be easy to run, inspect, test, and discuss in an interview.
 
@@ -11,9 +11,10 @@ Engineering teams often need answers that are more specific than a raw GitHub ac
 - How long do pull requests take to merge?
 - Which workflows fail repeatedly?
 - Are failures caused by tests, builds, dependencies, permissions, or infrastructure?
+- Did a CI failure appear for the first time, regress, persist, or get resolved?
 - Can a weekly report explain what deserves attention next?
 
-The analyzer combines pull request metrics with GitHub Actions stability analysis and produces CSV, Markdown, and chart outputs from one reproducible CLI command.
+The analyzer combines pull request metrics with GitHub Actions stability analysis and produces CSV, Markdown, PNG chart, and compact JSON snapshot outputs from one reproducible CLI command.
 
 ## Architecture
 
@@ -21,8 +22,9 @@ The analyzer combines pull request metrics with GitHub Actions stability analysi
 GitHub REST API
   -> resilient collection and pagination
   -> typed PR/workflow records
-  -> pure metrics and deterministic failure classification
-  -> CSV, Markdown, and PNG reports
+  -> deterministic failure classification and fingerprinting
+  -> pure metric, snapshot, and trend comparison modules
+  -> CSV, Markdown, PNG, and compact JSON outputs
 ```
 
 | Module | Responsibility |
@@ -30,7 +32,10 @@ GitHub REST API
 | `app/github_client.py` | GitHub HTTP calls, pagination, retries, rate-limit errors, and payload translation |
 | `app/models.py` | Immutable domain records and shared workflow outcome semantics |
 | `app/ci_failure_analysis.py` | Explainable rule-based log classification and evidence extraction |
-| `app/metrics.py` | Pure PR/CI aggregation, trends, weekly digest, and CSV rows |
+| `app/failure_fingerprint.py` | Stable SHA-256 fingerprints from noise-normalized CI failure details |
+| `app/snapshots.py` | Compact JSON snapshot persistence for week-over-week comparison |
+| `app/trends.py` | Pure snapshot comparison: lifecycle statuses and suspected flaky detection |
+| `app/metrics.py` | Pure PR/CI aggregation, trends, weekly digest, snapshot issues, and CSV rows |
 | `app/report.py` | Markdown report rendering |
 | `app/charts.py` | Optional PNG charts from already-computed rows |
 | `app/main.py` | CLI validation, orchestration, output paths, and exit codes |
@@ -49,7 +54,7 @@ Successful, neutral, skipped, and cancelled workflow runs do not need diagnostic
 
 ### Explicit outcome semantics
 
-Workflow conclusions are grouped consistently across summaries, trends, charts, and weekly digests:
+Workflow conclusions are grouped consistently across summaries, trends, charts, snapshots, and weekly digests:
 
 - `success`: successful
 - `failure`, `timed_out`, `action_required`, and other unsuccessful conclusions: failed
@@ -65,6 +70,31 @@ successful / (successful + failed) * 100
 ### Explainable failure diagnosis
 
 Failure classification is deterministic and rule-based. Each classification retains a concise evidence line and a source such as `logs`, `job_metadata`, `conclusion`, or `fallback`. A generic `exit code 1` is not treated as a test failure without stronger evidence. Unknown failures remain visible instead of being presented as confidently classified.
+
+### Failure fingerprints
+
+Repeated CI failures often contain volatile tokens such as timestamps, UUIDs, absolute file paths, line numbers, and high-cardinality numeric IDs. Normalizing these tokens before hashing ensures equivalent failures produce the same fingerprint. The hash input combines `category + normalized_detail`, so a test failure and a build failure with the same surface-level message produce different fingerprints.
+
+Each fingerprint has the stable identifier format `ci-failure-<12 hex chars>` and is deterministic across machines and operating systems.
+
+### Adjacent-window snapshots
+
+The latest snapshot uses a filename derived from `repo__days__end-date.json`. The adjacent equal-window snapshot is located by subtracting `days` from the current end date. Re-running on the same date never treats the just-written snapshot as the previous period, and a missing baseline is a normal first-run condition, not an error.
+
+### Lifecycle statuses
+
+A pure comparison of two adjacent snapshots yields one of four statuses for each recurring fingerprint:
+
+- `new`: appeared in the current window but not the previous one.
+- `persistent`: present in both windows with equal or lower count.
+- `regressed`: present in both windows with a higher count.
+- `resolved`: present only in the previous window.
+
+Active issues (`regressed`, `new`, `persistent`) are sorted before `resolved` issues and by decreasing count.
+
+### Suspected flaky detection
+
+A fingerprint is marked `suspected_flaky` when the same workflow contains a `failure(fp_X) -> success -> failure(fp_X)` subsequence across the combined snapshot observation set. This heuristic catches repeat offenders without requiring every run to be inspected manually. Consecutive failures and different fingerprints around a success are ignored.
 
 ## Metrics
 
@@ -88,6 +118,7 @@ The PR time window is based on PR creation time. Requested reviewers are exporte
 - Failure category distribution
 - Most frequently failing workflows
 - Daily failure trend and weekly digest
+- Compact issue clusters and observations for trend snapshots
 
 ## Outputs
 
@@ -99,6 +130,12 @@ The command writes these files under `outputs/` by default:
 - `weekly_digest.md`
 - `ci_failure_trend.png`
 - `unstable_workflows.png`
+
+It also writes compact trend snapshots under `outputs/snapshots/` by default:
+
+- `owner__repo__14__2026-07-20.json`
+
+Snapshots do not persist full logs or tokens.
 
 ## Quick Start
 
@@ -121,6 +158,12 @@ Run an analysis:
 python -m app.main --repo microsoft/vscode --days 14 --limit 20
 ```
 
+Use a custom snapshot directory when demonstrating failure trends:
+
+```powershell
+python -m app.main --repo microsoft/vscode --days 14 --limit 20 --snapshot-dir outputs/snapshots
+```
+
 The CLI validates `owner/name`, positive `--days`, and positive `--limit` before making network calls. GitHub authentication, not-found, rate-limit, timeout, and retry exhaustion errors return a non-zero exit code with an actionable message.
 
 ## Quality Checks
@@ -129,12 +172,18 @@ The same checks run locally and in `.github/workflows/ci.yml`:
 
 ```powershell
 python -m pytest -q
+python -m compileall -q app tests
+python -m app.main --help
 python -m ruff check .
 python -m ruff format --check .
 python -m mypy app
 ```
 
+The current branch has 55 passing tests: 38 from v1 and 17 added for v2 failure fingerprints, snapshots, trends, report rendering, and CLI integration.
+
 HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
+
+Ruff and mypy configuration is committed and runs in GitHub Actions. In the development environment used for this iteration, package installation for those tools was blocked by the machine's pip/index configuration, so their first authoritative run is expected to come from GitHub Actions.
 
 ## Sample Output
 
@@ -155,24 +204,38 @@ Example findings from the historical sample:
 - Workflow success rate: 17.65%
 - Dominant failure type: `build_failure`
 
-## Tests and Current Verification
+## Failure Trend Demo
 
-The local application test suite covers metric semantics, pagination, workflow request optimization, failure classification, retries, rate-limit/authentication errors, and CLI validation. The current branch has 38 passing tests and passes Python compilation checks.
+```powershell
+python -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs/snapshots`r`n# Run again after the next adjacent 14-day window to compare against the prior snapshot:`r`npython -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs/snapshots
+Get-Content outputs/snapshots/owner__repo__14__*.json
+Get-Content outputs/weekly_digest.md
+```
 
-Ruff and mypy configuration is committed and runs in GitHub Actions. In the development environment used for this iteration, package installation for those tools was blocked by the machine's pip/index configuration, so their first authoritative run is expected to come from GitHub Actions.
+The first run creates the baseline snapshot and reports `Baseline unavailable; this run establishes the first comparison snapshot.` A run in the next adjacent equal-length window can classify issues relative to the previous snapshot and include `new`, `persistent`, `regressed`, `resolved`, and `suspected_flaky` signals in `weekly_digest.md`. Re-running on the same date refreshes the current-day snapshot and does not treat it as the previous period.
+
+A live result still requires a GitHub token and repository access. The repository does not claim a fixed live demo output because GitHub activity changes over time.
 
 ## Limitations and Roadmap
 
-This v1 intentionally does not include a web dashboard, database, scheduled jobs, organization-wide aggregation, or LLM-based classification. It also does not calculate historical first-review response time because that requires review-event history rather than the current requested-reviewers snapshot.
+This project intentionally does not include a web dashboard, database, scheduled jobs, organization-wide aggregation, or LLM-based classification. It also does not calculate historical first-review response time because that requires review-event history rather than the current requested-reviewers snapshot.
+
+v2 addresses the v1 gap where a single pass over CI runs could not distinguish recurring failures from isolated ones. Current limitations:
+
+- `suspected_flaky` is a heuristic using a single fail-success-fail pattern and does not track actual GitHub re-run or workflow dispatch events.
+- Snapshot comparison works between two adjacent equal-window snapshots, not a rolling multi-window view.
+- Full logs are never persisted with the snapshot; only the compact fingerprint, categorization, and occurrence count are saved.
+- The CLI does not expose a standalone dashboard or notification system for regressions.
 
 Useful next steps would be:
 
-1. Persist snapshots for week-over-week comparisons.
-2. Add failure fingerprints for repeated incidents and likely flaky tests.
-3. Add workflow ownership and notification integrations.
-4. Add review-event metrics after introducing the required API collection.
+1. Add multi-window rolling detection and confidence scoring.
+2. Add workflow ownership and notification integrations.
+3. Add review-event metrics after introducing the required API collection.
 
 ## Interview Talking Points
+
+### v1
 
 - I found and fixed a pagination correctness issue caused by GitHub sorting PRs by update time while the report window uses creation time.
 - I reduced unnecessary GitHub API work by skipping jobs and log downloads for successful runs.
@@ -180,6 +243,13 @@ Useful next steps would be:
 - I added bounded retries and user-facing rate-limit/authentication errors around the HTTP client.
 - I used deterministic HTTP fixtures so correctness tests do not depend on live network state.
 - I kept failure diagnosis rule-based and explainable rather than claiming opaque classifier accuracy.
+
+### v2 - failure trend snapshots
+
+- I built a deterministic failure fingerprint system that normalizes timestamps, UUIDs, absolute paths, line numbers, and large numeric IDs before SHA-256 hashing, so repeated incidents with different volatile tokens produce the same fingerprint.
+- I designed a compact JSON snapshot schema with no full log persistence and an adjacent-window path resolution algorithm that prevents a just-written snapshot from being treated as its own baseline.
+- I implemented a pure snapshot comparison that classifies recurring fingerprints as `new`, `persistent`, `regressed`, or `resolved`, and flags suspected flaky via fail-success-fail subsequence detection across combined observations.
+- I integrated the full snapshot-trend lifecycle into the existing CLI with a single `--snapshot-dir` option, keeping existing CSV, PNG, and Markdown outputs compatible.
 
 ## Project Structure
 
@@ -189,15 +259,25 @@ github-efficiency-analyzer/
     charts.py
     ci_failure_analysis.py
     config.py
+    failure_fingerprint.py
     github_client.py
     main.py
     metrics.py
     models.py
     report.py
+    snapshots.py
+    trends.py
   tests/
+    test_failure_fingerprint.py
     test_github_client.py
     test_main.py
     test_metrics.py
+    test_report.py
+    test_snapshots.py
+    test_trends.py
+  docs/superpowers/
+    plans/
+    specs/
   .github/workflows/ci.yml
   pyproject.toml
   requirements.txt
