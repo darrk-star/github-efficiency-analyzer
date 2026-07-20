@@ -8,6 +8,7 @@ from dataclasses import dataclass
 class FailureAnalysis:
     category: str
     detail: str | None
+    source: str
 
 
 def analyze_failure_log(log_text: str, fallback_detail: str | None = None) -> FailureAnalysis:
@@ -81,7 +82,6 @@ def analyze_failure_log(log_text: str, fallback_detail: str | None = None) -> Fa
                 "2 failed",
                 "3 failed",
                 "failures:",
-                "error: process completed with exit code 1",
             ],
         ),
     ]
@@ -91,15 +91,28 @@ def analyze_failure_log(log_text: str, fallback_detail: str | None = None) -> Fa
             return FailureAnalysis(
                 category=category,
                 detail=_extract_first_matching_detail(log_text, keywords),
+                source="logs",
             )
 
     if re.search(r"exit code\s+137|killed", normalized):
-        return FailureAnalysis(category="resource_failure", detail=_extract_detail(log_text, "exit code"))
+        return FailureAnalysis(
+            category="resource_failure",
+            detail=_extract_detail(log_text, "exit code"),
+            source="logs",
+        )
 
     if re.search(r"timed out|time limit exceeded", normalized):
-        return FailureAnalysis(category="timeout", detail=_extract_detail(log_text, "timed out"))
+        return FailureAnalysis(
+            category="timeout",
+            detail=_extract_detail(log_text, "timed out"),
+            source="logs",
+        )
 
-    return FailureAnalysis(category="unknown_failure", detail=fallback_detail or _extract_first_error(log_text))
+    return FailureAnalysis(
+        category="unknown_failure",
+        detail=fallback_detail or _extract_first_error(log_text),
+        source="fallback",
+    )
 
 
 def _extract_detail(log_text: str, keyword: str) -> str | None:

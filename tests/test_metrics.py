@@ -211,6 +211,13 @@ def test_analyze_failure_log_detects_permission_failure():
     assert "permission denied" in (result.detail or "").lower()
 
 
+def test_generic_exit_code_does_not_claim_test_failure():
+    result = analyze_failure_log("Error: Process completed with exit code 1")
+
+    assert result.category == "unknown_failure"
+    assert result.source == "fallback"
+
+
 def test_build_weekly_ci_digest_aggregates_trends():
     records = [
         WorkflowRunRecord(

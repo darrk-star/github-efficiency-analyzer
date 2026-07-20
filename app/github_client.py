@@ -243,7 +243,7 @@ class GitHubClient:
                 log_text=log_text,
                 fallback_detail=self._build_failure_detail(jobs),
             )
-            return analysis.category, analysis.detail, "logs"
+            return analysis.category, analysis.detail, analysis.source
 
         fragments: list[str] = [
             str(run.get("name", "")),
