@@ -10,11 +10,12 @@ from app.github_client import GitHubClient
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code=200, headers=None, content=b""):
+    def __init__(self, payload, status_code=200, headers=None, content=b"", text=""):
         self._payload = payload
         self.status_code = status_code
         self.headers = headers or {}
         self.content = content
+        self.text = text or str(payload)
 
     def json(self):
         return self._payload
@@ -187,3 +188,46 @@ def test_fetch_workflow_runs_stops_at_creation_time_boundary():
 def test_split_repo_rejects_invalid_values(repo):
     with pytest.raises(ValueError, match="owner/name"):
         GitHubClient._split_repo(repo)
+
+
+def cutoff() -> datetime:
+    return datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+
+def test_request_retries_transient_server_error():
+    session = FakeSession([FakeResponse({}, status_code=503), FakeResponse([])])
+    client = GitHubClient(
+        AppConfig(github_max_retries=1, github_retry_backoff_seconds=0), session=session
+    )
+
+    assert client.fetch_pull_requests("owner/repo", cutoff(), limit=1) == []
+    assert len(session.calls) == 2
+
+
+def test_request_does_not_retry_not_found():
+    session = FakeSession([FakeResponse({}, status_code=404)])
+    client = GitHubClient(AppConfig(github_max_retries=2), session=session)
+
+    with pytest.raises(Exception, match="not found"):
+        client.fetch_pull_requests("owner/repo", cutoff(), limit=1)
+    assert len(session.calls) == 1
+
+
+def test_rate_limit_error_includes_reset_time():
+    response = FakeResponse(
+        {"message": "API rate limit exceeded"},
+        status_code=403,
+        headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1784563200"},
+    )
+    with pytest.raises(Exception, match="Rate limit"):
+        GitHubClient(AppConfig(github_max_retries=0), session=FakeSession([response])).fetch_pull_requests(
+            "owner/repo", cutoff(), limit=1
+        )
+
+
+def test_authentication_error_mentions_github_token():
+    response = FakeResponse({"message": "Bad credentials"}, status_code=401)
+    with pytest.raises(Exception, match="GITHUB_TOKEN"):
+        GitHubClient(AppConfig(), session=FakeSession([response])).fetch_pull_requests(
+            "owner/repo", cutoff(), limit=1
+        )

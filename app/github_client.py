@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import time
 import zipfile
 from datetime import datetime, timezone
 from typing import Any
@@ -12,9 +13,15 @@ from app.config import AppConfig
 from app.models import PullRequestRecord, WorkflowRunRecord
 
 
+class GitHubApiError(RuntimeError):
+    pass
+
+
 class GitHubClient:
     def __init__(self, config: AppConfig, session: requests.Session | None = None) -> None:
         self._base_url = config.github_api_base.rstrip("/")
+        self._max_retries = config.github_max_retries
+        self._retry_backoff_seconds = config.github_retry_backoff_seconds
         self._session = session or requests.Session()
         self._session.headers.update(
             {
@@ -38,7 +45,7 @@ class GitHubClient:
         pr_summaries: list[dict[str, Any]] = []
 
         while len(pr_summaries) < limit:
-            response = self._session.get(
+            response = self._get(
                 f"{self._base_url}/repos/{owner}/{name}/pulls",
                 params={
                     "state": state,
@@ -49,7 +56,6 @@ class GitHubClient:
                 },
                 timeout=30,
             )
-            response.raise_for_status()
             page_items = response.json()
             if not page_items:
                 break
@@ -76,7 +82,7 @@ class GitHubClient:
         records: list[WorkflowRunRecord] = []
 
         while len(records) < limit:
-            response = self._session.get(
+            response = self._get(
                 f"{self._base_url}/repos/{owner}/{name}/actions/runs",
                 params={
                     "per_page": min(100, limit - len(records)),
@@ -84,7 +90,6 @@ class GitHubClient:
                 },
                 timeout=30,
             )
-            response.raise_for_status()
             payload = response.json()
             runs = payload.get("workflow_runs", [])
             if not runs:
@@ -153,11 +158,10 @@ class GitHubClient:
         records: list[PullRequestRecord] = []
         for item in pr_summaries:
             number = item["number"]
-            detail = self._session.get(
+            detail = self._get(
                 f"{self._base_url}/repos/{owner}/{name}/pulls/{number}",
                 timeout=30,
             )
-            detail.raise_for_status()
             payload = detail.json()
             reviewer_names = tuple(
                 sorted(
@@ -190,12 +194,11 @@ class GitHubClient:
         return records
 
     def _fetch_run_jobs(self, owner: str, name: str, run_id: int) -> list[dict[str, Any]]:
-        response = self._session.get(
+        response = self._get(
             f"{self._base_url}/repos/{owner}/{name}/actions/runs/{run_id}/jobs",
             params={"per_page": 100},
             timeout=30,
         )
-        response.raise_for_status()
         return response.json().get("jobs", [])
 
     @staticmethod
@@ -277,12 +280,13 @@ class GitHubClient:
         return conclusion or "unknown", detail, "job_metadata" if detail else "fallback"
 
     def _download_workflow_logs(self, owner: str, name: str, run_id: int) -> str | None:
-        response = self._session.get(
-            f"{self._base_url}/repos/{owner}/{name}/actions/runs/{run_id}/logs",
-            allow_redirects=True,
-            timeout=60,
-        )
-        if response is None or response.status_code >= 400:
+        try:
+            response = self._get(
+                f"{self._base_url}/repos/{owner}/{name}/actions/runs/{run_id}/logs",
+                allow_redirects=True,
+                timeout=60,
+            )
+        except GitHubApiError:
             return None
 
         content_type = response.headers.get("Content-Type", "")
@@ -303,6 +307,60 @@ class GitHubClient:
                 return "\n".join(collected)
         except zipfile.BadZipFile:
             return None
+
+    def _get(self, url: str, **kwargs: Any) -> requests.Response:
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = self._session.get(url, **kwargs)
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                if attempt == self._max_retries:
+                    raise GitHubApiError(f"GitHub request failed after retries: {exc}") from exc
+                self._sleep_before_retry(attempt)
+                continue
+
+            if response.status_code in {429, 500, 502, 503, 504} and attempt < self._max_retries:
+                self._sleep_before_retry(attempt)
+                continue
+
+            self._raise_api_error(response)
+            return response
+
+        raise GitHubApiError("GitHub request failed after retries.")
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        time.sleep(self._retry_backoff_seconds * (2**attempt))
+
+    @staticmethod
+    def _raise_api_error(response: requests.Response) -> None:
+        if response.status_code < 400:
+            return
+
+        message = "GitHub API request failed."
+        try:
+            payload = response.json()
+            if isinstance(payload, dict) and payload.get("message"):
+                message = str(payload["message"])
+        except ValueError:
+            if response.text:
+                message = response.text[:300]
+
+        if response.status_code == 401:
+            raise GitHubApiError(
+                "GitHub API authentication failed. Check that GITHUB_TOKEN is valid."
+            )
+        if (
+            response.status_code in {403, 429}
+            and response.headers.get("X-RateLimit-Remaining") == "0"
+        ):
+            reset_value = response.headers.get("X-RateLimit-Reset")
+            reset_hint = ""
+            if reset_value:
+                reset_at = datetime.fromtimestamp(int(reset_value), tz=timezone.utc)
+                reset_hint = f" Reset at {reset_at.isoformat()}."
+            raise GitHubApiError(f"GitHub API Rate limit exceeded.{reset_hint}")
+        if response.status_code == 404:
+            raise GitHubApiError("GitHub repository or resource was not found.")
+        raise GitHubApiError(f"GitHub API error {response.status_code}: {message}")
 
     @staticmethod
     def _build_failure_detail(jobs: list[dict[str, Any]]) -> str | None:
