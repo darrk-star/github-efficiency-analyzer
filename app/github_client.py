@@ -13,9 +13,9 @@ from app.models import PullRequestRecord, WorkflowRunRecord
 
 
 class GitHubClient:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, session: requests.Session | None = None) -> None:
         self._base_url = config.github_api_base.rstrip("/")
-        self._session = requests.Session()
+        self._session = session or requests.Session()
         self._session.headers.update(
             {
                 "Accept": "application/vnd.github+json",
@@ -56,9 +56,8 @@ class GitHubClient:
 
             for item in page_items:
                 created_at = self._parse_dt(item["created_at"])
-                if created_at < created_after:
-                    return self._hydrate_pull_requests(pr_summaries, owner, name)
-                pr_summaries.append(item)
+                if created_at >= created_after:
+                    pr_summaries.append(item)
                 if len(pr_summaries) >= limit:
                     break
 
@@ -186,7 +185,7 @@ class GitHubClient:
     @staticmethod
     def _split_repo(repo: str) -> tuple[str, str]:
         parts = repo.split("/", maxsplit=1)
-        if len(parts) != 2 or not all(parts):
+        if len(parts) != 2 or not all(parts) or any("/" in part for part in parts):
             raise ValueError("Repository must be in the form owner/name.")
         return parts[0], parts[1]
 
