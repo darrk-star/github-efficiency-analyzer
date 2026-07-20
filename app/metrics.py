@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean, median
 
+from app.failure_fingerprint import build_failure_fingerprint, normalize_failure_detail
 from app.models import PullRequestRecord, WorkflowRunRecord, workflow_outcome
+from app.snapshots import FailureIssue, FailureObservation
 
 
 @dataclass(frozen=True)
@@ -165,6 +167,7 @@ def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetrics
     failure_categories = sorted(
         category_counts.items(), key=lambda item: (-item[1], item[0].lower())
     )
+
     top_failed_workflows = sorted(
         workflow_failures.items(), key=lambda item: (-item[1], item[0].lower())
     )[:5]
@@ -185,6 +188,78 @@ def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetrics
         failure_categories=failure_categories,
         top_failed_workflows=top_failed_workflows,
     )
+
+
+def build_failure_issues(
+    records: list[WorkflowRunRecord],
+) -> tuple[list[FailureIssue], list[FailureObservation]]:
+    issue_data: dict[str, dict[str, object]] = {}
+    observations: list[FailureObservation] = []
+
+    for record in sorted(records, key=lambda item: item.created_at):
+        if record.status != "completed":
+            continue
+
+        outcome = workflow_outcome(record.conclusion)
+        if outcome == "successful":
+            observations.append(
+                FailureObservation(
+                    observed_at=record.created_at,
+                    workflow=record.name,
+                    outcome="success",
+                    fingerprint=None,
+                )
+            )
+            continue
+        if outcome != "failed":
+            continue
+
+        fingerprint = build_failure_fingerprint(
+            record.failure_category,
+            record.failure_detail,
+        )
+        observations.append(
+            FailureObservation(
+                observed_at=record.created_at,
+                workflow=record.name,
+                outcome="failed",
+                fingerprint=fingerprint,
+            )
+        )
+        data = issue_data.setdefault(
+            fingerprint,
+            {
+                "category": record.failure_category,
+                "normalized_detail": normalize_failure_detail(record.failure_detail),
+                "example_detail": record.failure_detail or "Unknown failure",
+                "count": 0,
+                "workflows": set(),
+                "first_seen": record.created_at,
+                "last_seen": record.created_at,
+            },
+        )
+        data["count"] = int(data["count"]) + 1
+        workflows = data["workflows"]
+        if isinstance(workflows, set):
+            workflows.add(record.name)
+        data["first_seen"] = min(data["first_seen"], record.created_at)
+        data["last_seen"] = max(data["last_seen"], record.created_at)
+
+    issues = [
+        FailureIssue(
+            fingerprint=fingerprint,
+            category=str(data["category"]),
+            normalized_detail=str(data["normalized_detail"]),
+            example_detail=str(data["example_detail"]),
+            count=int(data["count"]),
+            workflows=sorted(str(item) for item in data["workflows"]),
+            first_seen=data["first_seen"],
+            last_seen=data["last_seen"],
+        )
+        for fingerprint, data in issue_data.items()
+    ]
+    issues.sort(key=lambda item: (-item.count, item.fingerprint))
+    return issues, observations
 
 
 def build_daily_failure_trend(records: list[WorkflowRunRecord]):

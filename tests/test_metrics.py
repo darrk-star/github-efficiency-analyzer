@@ -5,6 +5,7 @@ import pytest
 from app.ci_failure_analysis import analyze_failure_log
 from app.metrics import (
     build_daily_failure_trend,
+    build_failure_issues,
     build_failed_workflow_breakdown,
     build_weekly_ci_digest,
     summarize_pull_requests,
@@ -216,6 +217,80 @@ def test_generic_exit_code_does_not_claim_test_failure():
 
     assert result.category == "unknown_failure"
     assert result.source == "fallback"
+
+
+def test_build_failure_issues_clusters_equivalent_failures_and_tracks_success():
+    records = [
+        WorkflowRunRecord(
+            id=1,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="failure",
+            created_at=_dt(0),
+            updated_at=_dt(1),
+            run_started_at=_dt(0),
+            actor="alice",
+            branch="main",
+            duration_minutes=10.0,
+            html_url="https://example.com/runs/1",
+            jobs_url="https://example.com/runs/1/jobs",
+            failure_category="test_failure",
+            failure_detail=(
+                r"2026-07-20T10:11:12Z ERROR C:\builds\repo\tests\test_api.py:42 "
+                "request 12345 failed"
+            ),
+        ),
+        WorkflowRunRecord(
+            id=2,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="failure",
+            created_at=_dt(2),
+            updated_at=_dt(3),
+            run_started_at=_dt(2),
+            actor="bob",
+            branch="main",
+            duration_minutes=12.0,
+            html_url="https://example.com/runs/2",
+            jobs_url="https://example.com/runs/2/jobs",
+            failure_category="test_failure",
+            failure_detail=(
+                "2026-07-21T09:01:03Z ERROR /tmp/work/tests/test_api.py:99 "
+                "request 67890 failed"
+            ),
+        ),
+        WorkflowRunRecord(
+            id=3,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="success",
+            created_at=_dt(4),
+            updated_at=_dt(5),
+            run_started_at=_dt(4),
+            actor="carol",
+            branch="main",
+            duration_minutes=8.0,
+            html_url="https://example.com/runs/3",
+            jobs_url="https://example.com/runs/3/jobs",
+            failure_category="passed",
+            failure_detail=None,
+        ),
+    ]
+
+    issues, observations = build_failure_issues(records)
+
+    assert len(issues) == 1
+    assert issues[0].count == 2
+    assert issues[0].workflows == ["CI"]
+    assert issues[0].first_seen == _dt(0)
+    assert issues[0].last_seen == _dt(2)
+    assert len(observations) == 3
+    assert observations[0].fingerprint == observations[1].fingerprint
+    assert observations[2].outcome == "success"
+    assert observations[2].fingerprint is None
 
 
 def test_build_weekly_ci_digest_aggregates_trends():
