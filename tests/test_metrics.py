@@ -143,7 +143,10 @@ def test_analyze_failure_log_detects_dependency_failure():
     result = analyze_failure_log(log)
 
     assert result.category == "dependency_failure"
-    assert "could not find a version" in (result.detail or "").lower()
+    assert result.detail == (
+        "ERROR: Could not find a version that satisfies the requirement "
+        "private-package==1.2.3"
+    )
 
 
 def test_analyze_failure_log_detects_permission_failure():
@@ -235,9 +238,12 @@ def test_build_weekly_ci_digest_aggregates_trends():
     breakdown = build_failed_workflow_breakdown(records)
     digest = build_weekly_ci_digest(records)
 
-    assert list(trend["count"]) == [2, 1]
-    assert list(breakdown["workflow"]) == ["CI", "Lint"]
-    assert digest.worst_day == ("2026-06-01", 2)
+    assert trend == [
+        {"date": "2026-06-01", "failure_category": "lint_failure", "count": 1},
+        {"date": "2026-06-01", "failure_category": "test_failure", "count": 2},
+    ]
+    assert [item["workflow"] for item in breakdown] == ["CI", "Lint"]
+    assert digest.worst_day == ("2026-06-01", 3)
     assert digest.noisiest_category == ("test_failure", 2)
     assert digest.most_unstable_workflow == ("CI", 2)
     assert digest.top_failure_details[0] == ("pytest failed", 2)

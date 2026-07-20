@@ -87,9 +87,11 @@ def analyze_failure_log(log_text: str, fallback_detail: str | None = None) -> Fa
     ]
 
     for category, keywords in patterns:
-        for keyword in keywords:
-            if keyword in normalized:
-                return FailureAnalysis(category=category, detail=_extract_detail(log_text, keyword))
+        if any(keyword in normalized for keyword in keywords):
+            return FailureAnalysis(
+                category=category,
+                detail=_extract_first_matching_detail(log_text, keywords),
+            )
 
     if re.search(r"exit code\s+137|killed", normalized):
         return FailureAnalysis(category="resource_failure", detail=_extract_detail(log_text, "exit code"))
@@ -105,6 +107,14 @@ def _extract_detail(log_text: str, keyword: str) -> str | None:
     keyword_lower = keyword.lower()
     for line in lines:
         if keyword_lower in line.lower():
+            return line.strip()[:300]
+    return _extract_first_error(log_text)
+
+
+def _extract_first_matching_detail(log_text: str, keywords: list[str]) -> str | None:
+    for line in log_text.splitlines():
+        lowered = line.lower()
+        if any(keyword in lowered for keyword in keywords):
             return line.strip()[:300]
     return _extract_first_error(log_text)
 

@@ -42,44 +42,6 @@ class WeeklyCiDigest:
     repeated_issue_commentary: list[str]
 
 
-def build_pr_dataframe(records: list[PullRequestRecord]):
-    import pandas as pd
-
-    rows = []
-    for record in records:
-        merge_hours = None
-        if record.merged_at:
-            merge_hours = round(
-                (record.merged_at - record.created_at).total_seconds() / 3600, 2
-            )
-
-        rows.append(
-            {
-                "number": record.number,
-                "title": record.title,
-                "author": record.author,
-                "state": record.state,
-                "created_at": record.created_at.isoformat(),
-                "updated_at": record.updated_at.isoformat(),
-                "closed_at": record.closed_at.isoformat() if record.closed_at else None,
-                "merged_at": record.merged_at.isoformat() if record.merged_at else None,
-                "merge_hours": merge_hours,
-                "additions": record.additions,
-                "deletions": record.deletions,
-                "total_changes": record.additions + record.deletions,
-                "changed_files": record.changed_files,
-                "review_comments": record.review_comments,
-                "issue_comments": record.comments,
-                "commits": record.commits,
-                "reviewer_count": len(record.reviewers),
-                "reviewers": ",".join(record.reviewers),
-                "url": record.url,
-            }
-        )
-
-    return pd.DataFrame(rows)
-
-
 def build_pr_rows(records: list[PullRequestRecord]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for record in records:
@@ -145,33 +107,6 @@ def summarize_pull_requests(records: list[PullRequestRecord]) -> PullRequestMetr
         avg_comments=_average_or_none(comments),
         top_authors=top_authors,
     )
-
-
-def build_workflow_dataframe(records: list[WorkflowRunRecord]):
-    import pandas as pd
-
-    rows = [
-        {
-            "id": record.id,
-            "name": record.name,
-            "event": record.event,
-            "status": record.status,
-            "conclusion": record.conclusion,
-            "created_at": record.created_at.isoformat(),
-            "updated_at": record.updated_at.isoformat(),
-            "run_started_at": record.run_started_at.isoformat() if record.run_started_at else None,
-            "actor": record.actor,
-            "branch": record.branch,
-            "duration_minutes": record.duration_minutes,
-            "failure_category": record.failure_category,
-            "failure_detail": record.failure_detail,
-            "html_url": record.html_url,
-            "jobs_url": record.jobs_url,
-        }
-        for record in records
-    ]
-
-    return pd.DataFrame(rows)
 
 
 def build_workflow_rows(records: list[WorkflowRunRecord]) -> list[dict[str, object]]:
