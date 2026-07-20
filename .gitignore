@@ -5,3 +5,5 @@ __pycache__/
 outputs/
 .pytest_cache/
 .worktrees/
+.mypy_cache/
+.ruff_cache/
