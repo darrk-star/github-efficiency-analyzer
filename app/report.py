@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.metrics import PullRequestMetricsSummary, WeeklyCiDigest, WorkflowMetricsSummary
+from app.trends import TrendComparison
 
 
 def write_markdown_report(
@@ -73,6 +74,7 @@ def write_weekly_digest_report(
     repo: str,
     days: int,
     digest: WeeklyCiDigest,
+    comparison: TrendComparison | None = None,
 ) -> None:
     lines = [
         f"# Weekly CI Digest: {repo}",
@@ -109,7 +111,34 @@ def write_weekly_digest_report(
     else:
         lines.append("- No repeated issue commentary available.")
 
+    if comparison is not None:
+        lines.extend(["", render_weekly_digest(repo, days, digest, comparison)])
+
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def render_weekly_digest(
+    repo: str,
+    days: int,
+    digest: WeeklyCiDigest,
+    comparison: TrendComparison,
+) -> str:
+    lines = ["## Recurring CI Issues", ""]
+    if not comparison.baseline_available:
+        lines.append("- Baseline unavailable; this run establishes the first comparison snapshot.")
+    for issue in _top_actionable_issues(comparison):
+        flaky = " suspected_flaky" if issue.suspected_flaky else ""
+        lines.append(
+            f"- `{issue.status}`{flaky}: {issue.category} "
+            f"({issue.current_count} occurrences) - {issue.example_detail}"
+        )
+    return "\n".join(lines)
+
+
+def _top_actionable_issues(comparison: TrendComparison):
+    active = [issue for issue in comparison.issues if issue.status != "resolved"]
+    resolved = [issue for issue in comparison.issues if issue.status == "resolved"]
+    return (active + resolved)[:3]
 
 
 def _fmt(value: float | None) -> str:

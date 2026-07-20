@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -45,6 +45,17 @@ class Snapshot:
 def snapshot_filename(repo: str, window_days: int, end_date: str) -> str:
     safe_repo = repo.replace("/", "__")
     return f"{safe_repo}__{window_days}__{end_date}.json"
+
+
+def previous_snapshot_path(
+    directory: Path,
+    repo: str,
+    window_days: int,
+    current_end_date: str,
+) -> Path:
+    end = datetime.fromisoformat(current_end_date).date()
+    previous_end = end - timedelta(days=window_days)
+    return directory / snapshot_filename(repo, window_days, previous_end.isoformat())
 
 
 def write_snapshot(directory: Path, snapshot: Snapshot) -> Path:

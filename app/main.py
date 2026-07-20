@@ -13,6 +13,7 @@ from app.config import AppConfig
 from app.github_client import GitHubApiError, GitHubClient
 from app.metrics import (
     build_daily_failure_trend,
+    build_failure_issues,
     build_failed_workflow_breakdown,
     build_pr_rows,
     build_workflow_rows,
@@ -22,6 +23,8 @@ from app.metrics import (
     write_rows_to_csv,
 )
 from app.report import write_markdown_report, write_weekly_digest_report
+from app.snapshots import Snapshot, previous_snapshot_path, read_snapshot, write_snapshot
+from app.trends import compare_snapshots
 
 
 def positive_int(value: str) -> int:
@@ -73,6 +76,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="outputs",
         help="Directory where CSV and Markdown reports are written.",
     )
+
+    parser.add_argument(
+        "--snapshot-dir",
+        default="outputs/snapshots",
+        help="Directory for compact CI trend snapshot files.",
+    )
     return parser.parse_args(argv)
 
 
@@ -106,6 +115,30 @@ def run(argv: list[str] | None = None) -> int:
         daily_trend_frame = build_daily_failure_trend(workflow_records)
         failed_workflow_frame = build_failed_workflow_breakdown(workflow_records)
         weekly_digest = build_weekly_ci_digest(workflow_records)
+        snapshot_dir = Path(args.snapshot_dir)
+        issues, observations = build_failure_issues(workflow_records)
+        now = datetime.now(tz=timezone.utc)
+        current_snapshot = Snapshot(
+            schema_version=1,
+            repo=args.repo,
+            window_days=args.days,
+            generated_at=now,
+            total_runs=workflow_summary.total_runs,
+            failed_runs=workflow_summary.failed_runs,
+            issues=issues,
+            observations=observations,
+        )
+        previous_path = previous_snapshot_path(
+            snapshot_dir,
+            repo=args.repo,
+            window_days=args.days,
+            current_end_date=now.date().isoformat(),
+        )
+        previous = None
+        if previous_path.exists():
+            previous = read_snapshot(previous_path)
+        comparison = compare_snapshots(previous, current_snapshot)
+        snapshot_path = write_snapshot(snapshot_dir, current_snapshot)
 
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -119,7 +152,7 @@ def run(argv: list[str] | None = None) -> int:
         write_rows_to_csv(pr_csv_path, pr_rows)
         write_rows_to_csv(workflow_csv_path, workflow_rows)
         write_markdown_report(md_path, args.repo, args.days, pr_summary, workflow_summary)
-        write_weekly_digest_report(weekly_md_path, args.repo, args.days, weekly_digest)
+        write_weekly_digest_report(weekly_md_path, args.repo, args.days, weekly_digest, comparison)
         trend_chart_written = write_failure_trend_chart(daily_trend_frame, trend_chart_path)
         workflow_chart_written = write_failed_workflow_chart(
             failed_workflow_frame, workflow_chart_path
@@ -146,6 +179,7 @@ def run(argv: list[str] | None = None) -> int:
             "Unstable workflows chart: "
             + (str(workflow_chart_path.resolve()) if workflow_chart_written else "not generated")
         )
+        print(f"Snapshot: {snapshot_path.resolve()}")
         return 0
     except (GitHubApiError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from app.snapshots import (
+    previous_snapshot_path,
     FailureIssue,
     FailureObservation,
     Snapshot,
@@ -58,3 +59,14 @@ def test_snapshot_filename_is_deterministic():
         snapshot_filename("owner/repo", 14, "2026-07-20")
         == "owner__repo__14__2026-07-20.json"
     )
+
+
+def test_previous_snapshot_path_uses_adjacent_equal_window(tmp_path):
+    path = previous_snapshot_path(
+        tmp_path,
+        repo="owner/repo",
+        window_days=14,
+        current_end_date="2026-07-20",
+    )
+
+    assert path.name == "owner__repo__14__2026-07-06.json"
