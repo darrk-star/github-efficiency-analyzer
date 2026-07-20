@@ -60,3 +60,4 @@ class WorkflowRunRecord:
     jobs_url: str
     failure_category: str
     failure_detail: str | None
+    failure_source: str = "unknown"

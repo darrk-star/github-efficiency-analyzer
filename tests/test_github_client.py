@@ -61,6 +61,28 @@ def pr_detail(number: int) -> dict[str, object]:
     }
 
 
+def workflow_run(
+    run_id: int,
+    conclusion: str,
+    created_at: str = "2026-07-18T00:00:00Z",
+) -> dict[str, object]:
+    return {
+        "id": run_id,
+        "name": "CI",
+        "display_title": "CI",
+        "event": "pull_request",
+        "status": "completed",
+        "conclusion": conclusion,
+        "created_at": created_at,
+        "updated_at": created_at,
+        "run_started_at": created_at,
+        "actor": {"login": "alice"},
+        "head_branch": "main",
+        "html_url": f"https://example.com/runs/{run_id}",
+        "jobs_url": f"https://api.example.com/runs/{run_id}/jobs",
+    }
+
+
 def test_fetch_pull_requests_filters_old_items_without_stopping_pagination():
     session = FakeSession(
         [
@@ -84,6 +106,81 @@ def test_fetch_pull_requests_filters_old_items_without_stopping_pagination():
     )
 
     assert [record.number for record in records] == [2, 3]
+
+
+def test_fetch_workflow_runs_does_not_fetch_jobs_or_logs_for_success():
+    session = FakeSession(
+        [
+            FakeResponse({"workflow_runs": [workflow_run(1, "success")]}),
+            FakeResponse({"workflow_runs": []}),
+        ]
+    )
+    client = GitHubClient(AppConfig(), session=session)
+
+    records = client.fetch_workflow_runs(
+        "owner/repo",
+        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        limit=10,
+    )
+
+    assert records[0].failure_category == "passed"
+    assert len(session.calls) == 2
+
+
+def test_failed_workflow_uses_job_metadata_when_logs_are_unavailable():
+    jobs = {
+        "jobs": [
+            {
+                "name": "tests",
+                "conclusion": "failure",
+                "steps": [{"name": "pytest", "conclusion": "failure", "status": "completed"}],
+            }
+        ]
+    }
+    session = FakeSession(
+        [
+            FakeResponse({"workflow_runs": [workflow_run(2, "failure")]}),
+            FakeResponse(jobs),
+            FakeResponse({}, content=b"plain text"),
+            FakeResponse({"workflow_runs": []}),
+        ]
+    )
+    client = GitHubClient(AppConfig(), session=session)
+
+    records = client.fetch_workflow_runs(
+        "owner/repo",
+        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        limit=10,
+    )
+
+    assert records[0].failure_category == "test_failure"
+    assert records[0].failure_detail == "Job 'tests' failed at step 'pytest'."
+    assert records[0].failure_source == "job_metadata"
+
+
+def test_fetch_workflow_runs_stops_at_creation_time_boundary():
+    session = FakeSession(
+        [
+            FakeResponse(
+                {
+                    "workflow_runs": [
+                        workflow_run(1, "success"),
+                        workflow_run(2, "success", "2026-06-01T00:00:00Z"),
+                    ]
+                }
+            )
+        ]
+    )
+    client = GitHubClient(AppConfig(), session=session)
+
+    records = client.fetch_workflow_runs(
+        "owner/repo",
+        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        limit=10,
+    )
+
+    assert [record.id for record in records] == [1]
+    assert len(session.calls) == 1
 
 
 @pytest.mark.parametrize("repo", ["owner", "/repo", "owner/", "owner/repo/extra"])

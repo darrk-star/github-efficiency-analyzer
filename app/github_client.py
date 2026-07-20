@@ -95,13 +95,28 @@ class GitHubClient:
                 if created_at < created_after:
                     return records
 
-                jobs = self._fetch_run_jobs(owner, name, run["id"])
-                failure_category, failure_detail = self._categorize_workflow_failure(
-                    owner=owner,
-                    name=name,
-                    run=run,
-                    jobs=jobs,
-                )
+                conclusion = (run.get("conclusion") or "").lower()
+                jobs: list[dict[str, Any]] = []
+                if conclusion in {"success", "neutral", "skipped"}:
+                    failure_category, failure_detail, failure_source = "passed", None, "conclusion"
+                elif conclusion == "cancelled":
+                    failure_category = "cancelled"
+                    failure_detail = "Workflow run was cancelled."
+                    failure_source = "conclusion"
+                elif conclusion == "timed_out":
+                    failure_category = "timeout"
+                    failure_detail = "Workflow run reached the execution timeout."
+                    failure_source = "conclusion"
+                else:
+                    jobs = self._fetch_run_jobs(owner, name, run["id"])
+                    failure_category, failure_detail, failure_source = (
+                        self._categorize_workflow_failure(
+                            owner=owner,
+                            name=name,
+                            run=run,
+                            jobs=jobs,
+                        )
+                    )
                 records.append(
                     WorkflowRunRecord(
                         id=run["id"],
@@ -122,6 +137,7 @@ class GitHubClient:
                         jobs_url=run["jobs_url"],
                         failure_category=failure_category,
                         failure_detail=failure_detail,
+                        failure_source=failure_source,
                     )
                 )
                 if len(records) >= limit:
@@ -209,14 +225,14 @@ class GitHubClient:
         name: str,
         run: dict[str, Any],
         jobs: list[dict[str, Any]],
-    ) -> tuple[str, str | None]:
+    ) -> tuple[str, str | None, str]:
         conclusion = (run.get("conclusion") or "").lower()
         if conclusion in {"success", "neutral", "skipped"}:
-            return "passed", None
+            return "passed", None, "conclusion"
         if conclusion == "cancelled":
-            return "cancelled", "Workflow run was cancelled."
+            return "cancelled", "Workflow run was cancelled.", "conclusion"
         if conclusion == "timed_out":
-            return "timeout", "Workflow run reached the execution timeout."
+            return "timeout", "Workflow run reached the execution timeout.", "conclusion"
 
         log_text = self._download_workflow_logs(owner, name, run["id"])
         if log_text:
@@ -224,7 +240,7 @@ class GitHubClient:
                 log_text=log_text,
                 fallback_detail=self._build_failure_detail(jobs),
             )
-            return analysis.category, analysis.detail
+            return analysis.category, analysis.detail, "logs"
 
         fragments: list[str] = [
             str(run.get("name", "")),
@@ -251,12 +267,14 @@ class GitHubClient:
 
         for category, keywords in keyword_categories:
             if any(keyword in haystack for keyword in keywords):
-                return category, self._build_failure_detail(jobs)
+                return category, self._build_failure_detail(jobs), "job_metadata"
 
         if conclusion == "failure":
-            return "unknown_failure", self._build_failure_detail(jobs)
+            detail = self._build_failure_detail(jobs)
+            return "unknown_failure", detail, "job_metadata" if detail else "fallback"
 
-        return conclusion or "unknown", self._build_failure_detail(jobs)
+        detail = self._build_failure_detail(jobs)
+        return conclusion or "unknown", detail, "job_metadata" if detail else "fallback"
 
     def _download_workflow_logs(self, owner: str, name: str, run_id: int) -> str | None:
         response = self._session.get(

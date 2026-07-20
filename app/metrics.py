@@ -128,6 +128,7 @@ def build_workflow_rows(records: list[WorkflowRunRecord]) -> list[dict[str, obje
             "duration_minutes": record.duration_minutes,
             "failure_category": record.failure_category,
             "failure_detail": record.failure_detail,
+            "failure_source": record.failure_source,
             "html_url": record.html_url,
             "jobs_url": record.jobs_url,
         }
