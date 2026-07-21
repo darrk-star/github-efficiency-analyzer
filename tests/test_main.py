@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -39,9 +39,7 @@ def test_format_optional_number_preserves_zero():
 
 
 def test_parse_args_accepts_snapshot_dir():
-    args = parse_args(
-        ["--repo", "owner/repo", "--snapshot-dir", "tmp/snapshots"]
-    )
+    args = parse_args(["--repo", "owner/repo", "--snapshot-dir", "tmp/snapshots"])
 
     assert args.snapshot_dir == "tmp/snapshots"
 
@@ -68,9 +66,7 @@ def test_run_returns_nonzero_for_github_error(monkeypatch, capsys):
     assert "GitHub API unavailable" in capsys.readouterr().err
 
 
-def test_run_writes_snapshot_and_weekly_digest_with_missing_baseline(
-    monkeypatch, tmp_path, capsys
-):
+def test_run_writes_snapshot_and_weekly_digest_with_missing_baseline(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr("app.main.GitHubClient.fetch_pull_requests", lambda *args, **kwargs: [])
     monkeypatch.setattr(
         "app.main.GitHubClient.fetch_workflow_runs",
@@ -98,13 +94,9 @@ def test_run_writes_snapshot_and_weekly_digest_with_missing_baseline(
     snapshots = list((tmp_path / "snapshots").glob("owner__repo__14__*.json"))
     assert len(snapshots) == 1
     assert read_snapshot(snapshots[0]).issues[0].example_detail == "pytest failed"
-    weekly_digest = (tmp_path / "outputs" / "weekly_digest.md").read_text(
-        encoding="utf-8"
-    )
+    weekly_digest = (tmp_path / "outputs" / "weekly_digest.md").read_text(encoding="utf-8")
     assert "Baseline unavailable" in weekly_digest
-    html_report = (tmp_path / "outputs" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    html_report = (tmp_path / "outputs" / "index.html").read_text(encoding="utf-8")
     assert "owner/repo" in html_report
     assert "Baseline unavailable" in html_report
     output = capsys.readouterr().out
@@ -151,9 +143,7 @@ def test_run_compares_against_adjacent_previous_snapshot(monkeypatch, tmp_path):
     )
 
     assert result == 0
-    weekly_digest = (tmp_path / "outputs" / "weekly_digest.md").read_text(
-        encoding="utf-8"
-    )
+    weekly_digest = (tmp_path / "outputs" / "weekly_digest.md").read_text(encoding="utf-8")
     assert "`persistent`: test_failure (1 occurrences) - pytest failed" in weekly_digest
     assert "Baseline unavailable" not in weekly_digest
 
@@ -196,11 +186,11 @@ def test_run_demo_mode_does_not_use_github_client(monkeypatch, tmp_path, capsys)
 class _FrozenDateTime(datetime):
     @classmethod
     def now(cls, tz=None):
-        return datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc)
+        return datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
 
 
 def _workflow_run() -> WorkflowRunRecord:
-    observed_at = datetime(2026, 7, 20, 10, 0, tzinfo=timezone.utc)
+    observed_at = datetime(2026, 7, 20, 10, 0, tzinfo=UTC)
     return WorkflowRunRecord(
         id=1,
         name="CI",
@@ -221,7 +211,7 @@ def _workflow_run() -> WorkflowRunRecord:
 
 
 def _previous_snapshot() -> Snapshot:
-    previous_at = datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc)
+    previous_at = datetime(2026, 7, 6, 12, 0, tzinfo=UTC)
     fingerprint = "ci-failure-f6510dd02369"
     return Snapshot(
         schema_version=1,

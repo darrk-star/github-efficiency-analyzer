@@ -102,9 +102,7 @@ def _build_trend_issue(
     )
 
 
-def _count_flaky_recurrences(
-    observations: list[FailureObservation], fingerprint: str
-) -> int:
+def _count_flaky_recurrences(observations: list[FailureObservation], fingerprint: str) -> int:
     by_workflow: dict[str, list[FailureObservation]] = {}
     for observation in observations:
         by_workflow.setdefault(observation.workflow, []).append(observation)

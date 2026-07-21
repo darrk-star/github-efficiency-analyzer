@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,15 +12,15 @@ from dotenv import load_dotenv
 from app.charts import write_failed_workflow_chart, write_failure_trend_chart
 from app.config import AppConfig
 from app.demo import run_demo
-from app.html_report import write_html_report
 from app.github_client import GitHubApiError, GitHubClient
+from app.html_report import write_html_report
 from app.metrics import (
     build_daily_failure_trend,
-    build_failure_issues,
     build_failed_workflow_breakdown,
+    build_failure_issues,
     build_pr_rows,
-    build_workflow_rows,
     build_weekly_ci_digest,
+    build_workflow_rows,
     summarize_pull_requests,
     summarize_workflow_runs,
     write_rows_to_csv,
@@ -110,7 +110,7 @@ def run(argv: list[str] | None = None) -> int:
 
         config = AppConfig.from_env()
         client = GitHubClient(config)
-        created_after = datetime.now(tz=timezone.utc) - timedelta(days=args.days)
+        created_after = datetime.now(tz=UTC) - timedelta(days=args.days)
 
         logging.info("Fetching pull requests for %s", args.repo)
         pr_records = client.fetch_pull_requests(
@@ -134,7 +134,7 @@ def run(argv: list[str] | None = None) -> int:
         weekly_digest = build_weekly_ci_digest(workflow_records)
         snapshot_dir = Path(args.snapshot_dir)
         issues, observations = build_failure_issues(workflow_records)
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         current_snapshot = Snapshot(
             schema_version=1,
             repo=args.repo,
@@ -184,13 +184,11 @@ def run(argv: list[str] | None = None) -> int:
         }
         if trend_chart_written:
             artifact_links["CI failure trend chart"] = _relative_to_output(
-                trend_chart_path,
-                output_dir
+                trend_chart_path, output_dir
             )
         if workflow_chart_written:
             artifact_links["Unstable workflows chart"] = _relative_to_output(
-                workflow_chart_path,
-                output_dir
+                workflow_chart_path, output_dir
             )
         write_html_report(
             html_path,
@@ -208,10 +206,7 @@ def run(argv: list[str] | None = None) -> int:
         print(f"Merged PRs: {pr_summary.merged_prs}")
         print(f"Average merge time (hours): {format_optional_number(pr_summary.avg_merge_hours)}")
         print(f"Workflow runs inspected: {workflow_summary.total_runs}")
-        print(
-            "Workflow success rate (%): "
-            f"{format_optional_number(workflow_summary.success_rate)}"
-        )
+        print(f"Workflow success rate (%): {format_optional_number(workflow_summary.success_rate)}")
         print(f"PR CSV report: {pr_csv_path.resolve()}")
         print(f"Workflow CSV report: {workflow_csv_path.resolve()}")
         print(f"Markdown summary: {md_path.resolve()}")

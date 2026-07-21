@@ -1,12 +1,12 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from app.ci_failure_analysis import analyze_failure_log
 from app.metrics import (
     build_daily_failure_trend,
-    build_failure_issues,
     build_failed_workflow_breakdown,
+    build_failure_issues,
     build_weekly_ci_digest,
     summarize_pull_requests,
     summarize_workflow_runs,
@@ -15,7 +15,7 @@ from app.models import PullRequestRecord, WorkflowRunRecord, workflow_outcome
 
 
 def _dt(hour: int) -> datetime:
-    return datetime(2026, 6, 1, hour, 0, tzinfo=timezone.utc)
+    return datetime(2026, 6, 1, hour, 0, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
@@ -194,8 +194,7 @@ def test_analyze_failure_log_detects_dependency_failure():
 
     assert result.category == "dependency_failure"
     assert result.detail == (
-        "ERROR: Could not find a version that satisfies the requirement "
-        "private-package==1.2.3"
+        "ERROR: Could not find a version that satisfies the requirement private-package==1.2.3"
     )
 
 
@@ -257,8 +256,7 @@ def test_build_failure_issues_clusters_equivalent_failures_and_tracks_success():
             jobs_url="https://example.com/runs/2/jobs",
             failure_category="test_failure",
             failure_detail=(
-                "2026-07-21T09:01:03Z ERROR /tmp/work/tests/test_api.py:99 "
-                "request 67890 failed"
+                "2026-07-21T09:01:03Z ERROR /tmp/work/tests/test_api.py:99 request 67890 failed"
             ),
         ),
         WorkflowRunRecord(

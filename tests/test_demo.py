@@ -28,14 +28,8 @@ def test_run_demo_writes_reports_and_adjacent_snapshots(tmp_path):
     assert output_dir / "summary.md" in paths
     assert output_dir / "weekly_digest.md" in paths
     assert output_dir / "index.html" in paths
-    assert (
-        snapshot_dir / "acme__checkout-service__14__2026-07-06.json"
-        in paths
-    )
-    assert (
-        snapshot_dir / "acme__checkout-service__14__2026-07-20.json"
-        in paths
-    )
+    assert snapshot_dir / "acme__checkout-service__14__2026-07-06.json" in paths
+    assert snapshot_dir / "acme__checkout-service__14__2026-07-20.json" in paths
 
     weekly_digest = (output_dir / "weekly_digest.md").read_text(encoding="utf-8")
     assert "## Recurring CI Issues" in weekly_digest
@@ -61,7 +55,4 @@ def test_run_demo_keeps_core_outputs_when_chart_backend_fails(monkeypatch, tmp_p
     assert repo == "acme/checkout-service"
     assert tmp_path / "outputs" / "weekly_digest.md" in paths
     assert tmp_path / "outputs" / "index.html" in paths
-    assert (
-        tmp_path / "snapshots" / "acme__checkout-service__14__2026-07-20.json"
-        in paths
-    )
+    assert tmp_path / "snapshots" / "acme__checkout-service__14__2026-07-20.json" in paths

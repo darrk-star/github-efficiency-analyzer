@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -102,7 +102,7 @@ def test_fetch_pull_requests_filters_old_items_without_stopping_pagination():
 
     records = client.fetch_pull_requests(
         "owner/repo",
-        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        datetime(2026, 7, 1, tzinfo=UTC),
         limit=2,
     )
 
@@ -120,7 +120,7 @@ def test_fetch_workflow_runs_does_not_fetch_jobs_or_logs_for_success():
 
     records = client.fetch_workflow_runs(
         "owner/repo",
-        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        datetime(2026, 7, 1, tzinfo=UTC),
         limit=10,
     )
 
@@ -150,7 +150,7 @@ def test_failed_workflow_uses_job_metadata_when_logs_are_unavailable():
 
     records = client.fetch_workflow_runs(
         "owner/repo",
-        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        datetime(2026, 7, 1, tzinfo=UTC),
         limit=10,
     )
 
@@ -176,7 +176,7 @@ def test_fetch_workflow_runs_stops_at_creation_time_boundary():
 
     records = client.fetch_workflow_runs(
         "owner/repo",
-        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        datetime(2026, 7, 1, tzinfo=UTC),
         limit=10,
     )
 
@@ -191,7 +191,7 @@ def test_split_repo_rejects_invalid_values(repo):
 
 
 def cutoff() -> datetime:
-    return datetime(2026, 7, 1, tzinfo=timezone.utc)
+    return datetime(2026, 7, 1, tzinfo=UTC)
 
 
 def test_request_retries_transient_server_error():
@@ -220,9 +220,9 @@ def test_rate_limit_error_includes_reset_time():
         headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1784563200"},
     )
     with pytest.raises(Exception, match="Rate limit"):
-        GitHubClient(AppConfig(github_max_retries=0), session=FakeSession([response])).fetch_pull_requests(
-            "owner/repo", cutoff(), limit=1
-        )
+        GitHubClient(
+            AppConfig(github_max_retries=0), session=FakeSession([response])
+        ).fetch_pull_requests("owner/repo", cutoff(), limit=1)
 
 
 def test_authentication_error_mentions_github_token():

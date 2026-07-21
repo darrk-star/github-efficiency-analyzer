@@ -1,10 +1,9 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.snapshots import FailureIssue, FailureObservation, Snapshot
 from app.trends import compare_snapshots
 
-
-BASE = datetime(2026, 7, 20, tzinfo=timezone.utc)
+BASE = datetime(2026, 7, 20, tzinfo=UTC)
 
 
 def issue(fingerprint: str, count: int) -> FailureIssue:
@@ -99,7 +98,9 @@ def test_different_fingerprints_around_success_are_not_suspected_flaky():
     )
     current = snapshot([issue("second", 1)], [observation(2, "CI", "failed", "second")])
 
-    by_fingerprint = {item.fingerprint: item for item in compare_snapshots(previous, current).issues}
+    by_fingerprint = {
+        item.fingerprint: item for item in compare_snapshots(previous, current).issues
+    }
 
     assert by_fingerprint["first"].suspected_flaky is False
     assert by_fingerprint["second"].suspected_flaky is False

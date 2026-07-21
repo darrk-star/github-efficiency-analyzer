@@ -51,8 +51,7 @@ def write_markdown_report(
     lines.extend(["", "## CI Failure Categories", ""])
     if workflow_summary.failure_categories:
         lines.extend(
-            f"- {category}: {count} runs"
-            for category, count in workflow_summary.failure_categories
+            f"- {category}: {count} runs" for category, count in workflow_summary.failure_categories
         )
     else:
         lines.append("- No failed workflow runs found in the selected window.")

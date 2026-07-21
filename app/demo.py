@@ -26,7 +26,6 @@ from app.report import write_markdown_report, write_weekly_digest_report
 from app.snapshots import Snapshot, write_snapshot
 from app.trends import compare_snapshots
 
-
 DEFAULT_FIXTURE_PATH = Path("examples/fixtures/portfolio_demo.json")
 LOGGER = logging.getLogger(__name__)
 
@@ -49,9 +48,7 @@ def load_demo_fixture(path: Path = DEFAULT_FIXTURE_PATH) -> DemoFixture:
         days=int(payload["days"]),
         previous_generated_at=_parse_datetime(str(payload["previous_generated_at"])),
         current_generated_at=_parse_datetime(str(payload["current_generated_at"])),
-        pull_requests=[
-            _parse_pull_request(item) for item in payload["pull_requests"]
-        ],
+        pull_requests=[_parse_pull_request(item) for item in payload["pull_requests"]],
         previous_workflow_runs=[
             _parse_workflow_run(item) for item in payload["previous_workflow_runs"]
         ],
@@ -85,9 +82,7 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     workflow_rows = build_workflow_rows(fixture.current_workflow_runs)
     weekly_digest = build_weekly_ci_digest(fixture.current_workflow_runs)
     daily_trend_frame = build_daily_failure_trend(fixture.current_workflow_runs)
-    failed_workflow_frame = build_failed_workflow_breakdown(
-        fixture.current_workflow_runs
-    )
+    failed_workflow_frame = build_failed_workflow_breakdown(fixture.current_workflow_runs)
 
     pr_csv_path = output_dir / "pull_requests.csv"
     workflow_csv_path = output_dir / "workflow_runs.csv"
@@ -101,12 +96,8 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     current_snapshot_path = write_snapshot(snapshot_dir, current_snapshot)
     write_rows_to_csv(pr_csv_path, pr_rows)
     write_rows_to_csv(workflow_csv_path, workflow_rows)
-    write_markdown_report(
-        summary_path, fixture.repo, fixture.days, pr_summary, workflow_summary
-    )
-    write_weekly_digest_report(
-        weekly_path, fixture.repo, fixture.days, weekly_digest, comparison
-    )
+    write_markdown_report(summary_path, fixture.repo, fixture.days, pr_summary, workflow_summary)
+    write_weekly_digest_report(weekly_path, fixture.repo, fixture.days, weekly_digest, comparison)
     chart_paths: list[Path] = []
     for chart_fn, chart_data, chart_path in [
         (write_failure_trend_chart, daily_trend_frame, trend_chart_path),
@@ -212,17 +203,13 @@ def _parse_workflow_run(item: dict[str, Any]) -> WorkflowRunRecord:
         actor=str(item["actor"]),
         branch=str(item["branch"]),
         duration_minutes=(
-            float(item["duration_minutes"])
-            if item["duration_minutes"] is not None
-            else None
+            float(item["duration_minutes"]) if item["duration_minutes"] is not None else None
         ),
         html_url=str(item["html_url"]),
         jobs_url=str(item["jobs_url"]),
         failure_category=str(item["failure_category"]),
         failure_detail=(
-            str(item["failure_detail"])
-            if item["failure_detail"] is not None
-            else None
+            str(item["failure_detail"]) if item["failure_detail"] is not None else None
         ),
         failure_source="fixture",
     )

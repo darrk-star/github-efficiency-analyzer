@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import requests
@@ -164,12 +164,7 @@ class GitHubClient:
             )
             payload = detail.json()
             reviewer_names = tuple(
-                sorted(
-                    {
-                        reviewer["login"]
-                        for reviewer in payload.get("requested_reviewers", [])
-                    }
-                )
+                sorted({reviewer["login"] for reviewer in payload.get("requested_reviewers", [])})
             )
             records.append(
                 PullRequestRecord(
@@ -210,7 +205,7 @@ class GitHubClient:
 
     @staticmethod
     def _parse_dt(value: str) -> datetime:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
 
     @classmethod
     def _parse_optional_dt(cls, value: str | None) -> datetime | None:
@@ -264,7 +259,10 @@ class GitHubClient:
             ("lint_failure", ["lint", "flake8", "ruff", "black", "isort", "mypy"]),
             ("build_failure", ["build", "compile", "pack", "bundle"]),
             ("dependency_failure", ["pip", "poetry", "dependency", "install", "resolve"]),
-            ("infra_failure", ["docker", "service", "network", "connection", "kubernetes", "container"]),
+            (
+                "infra_failure",
+                ["docker", "service", "network", "connection", "kubernetes", "container"],
+            ),
             ("permission_failure", ["permission", "forbidden", "denied", "unauthorized"]),
         ]
 
@@ -355,7 +353,7 @@ class GitHubClient:
             reset_value = response.headers.get("X-RateLimit-Reset")
             reset_hint = ""
             if reset_value:
-                reset_at = datetime.fromtimestamp(int(reset_value), tz=timezone.utc)
+                reset_at = datetime.fromtimestamp(int(reset_value), tz=UTC)
                 reset_hint = f" Reset at {reset_at.isoformat()}."
             raise GitHubApiError(f"GitHub API Rate limit exceeded.{reset_hint}")
         if response.status_code == 404:

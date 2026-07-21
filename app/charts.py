@@ -13,9 +13,11 @@ def write_failure_trend_chart(trend_frame, output_path: Path) -> bool:
     except ModuleNotFoundError:
         return False
 
-    pivot = pd.DataFrame(trend_frame).pivot(
-        index="date", columns="failure_category", values="count"
-    ).fillna(0)
+    pivot = (
+        pd.DataFrame(trend_frame)
+        .pivot(index="date", columns="failure_category", values="count")
+        .fillna(0)
+    )
     pivot.index = pd.to_datetime(pivot.index)
     pivot = pivot.sort_index()
 

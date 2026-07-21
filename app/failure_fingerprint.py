@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import re
 
-
 _TIMESTAMP = re.compile(r"\b\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z\b")
 _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
 _WINDOWS_PATH = re.compile(r"\b[a-z]:\\(?:[^\s\\]+\\)+([^\s\\:]+)", re.IGNORECASE)

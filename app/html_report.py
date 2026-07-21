@@ -91,9 +91,7 @@ def _pull_request_section(pr_summary: PullRequestMetricsSummary) -> str:
         ("Average changed files", _fmt_number(pr_summary.avg_changed_files)),
         ("Average comments", _fmt_number(pr_summary.avg_comments)),
     ]
-    body = '<div class="cards">' + "".join(
-        _card(label, value) for label, value in cards
-    ) + "</div>"
+    body = '<div class="cards">' + "".join(_card(label, value) for label, value in cards) + "</div>"
     body += "<h3>Top Authors</h3>"
     body += _pair_list(pr_summary.top_authors, "PRs", "No pull requests found.")
     return _section("Pull Request Metrics", body)
@@ -109,9 +107,7 @@ def _workflow_section(workflow_summary: WorkflowMetricsSummary) -> str:
         ("Workflow success rate", _fmt_percent(workflow_summary.success_rate)),
         ("Average duration", _fmt_minutes(workflow_summary.avg_duration_minutes)),
     ]
-    body = '<div class="cards">' + "".join(
-        _card(label, value) for label, value in cards
-    ) + "</div>"
+    body = '<div class="cards">' + "".join(_card(label, value) for label, value in cards) + "</div>"
     body += "<h3>CI Failure Categories</h3>"
     body += _pair_list(
         workflow_summary.failure_categories,
@@ -136,9 +132,7 @@ def _digest_section(digest: WeeklyCiDigest) -> str:
             _format_pair(digest.most_unstable_workflow, "failed runs"),
         ),
     ]
-    body = '<div class="split">' + "".join(
-        _fact(label, value) for label, value in rows
-    ) + "</div>"
+    body = '<div class="split">' + "".join(_fact(label, value) for label, value in rows) + "</div>"
     body += "<h3>Repeated Failure Details</h3>"
     body += _pair_list(
         digest.top_failure_details,
@@ -165,9 +159,7 @@ def _recurring_issue_section(comparison: TrendComparison) -> str:
         body += '<div class="issues">'
         for issue in comparison.issues:
             flaky = (
-                '<span class="badge flaky">suspected flaky</span>'
-                if issue.suspected_flaky
-                else ""
+                '<span class="badge flaky">suspected flaky</span>' if issue.suspected_flaky else ""
             )
             workflows = ", ".join(issue.workflows) if issue.workflows else "N/A"
             body += (
@@ -191,13 +183,17 @@ def _charts_section(chart_items: dict[str, Path]) -> str:
             "Charts",
             '<p class="muted">Charts were not generated for this run.</p>',
         )
-    body = '<div class="charts">' + "".join(
-        (
-            f'<figure><img src="{_path_attr(path)}" alt="{escape(label)}">'
-            f"<figcaption>{escape(label)}</figcaption></figure>"
+    body = (
+        '<div class="charts">'
+        + "".join(
+            (
+                f'<figure><img src="{_path_attr(path)}" alt="{escape(label)}">'
+                f"<figcaption>{escape(label)}</figcaption></figure>"
+            )
+            for label, path in chart_items.items()
         )
-        for label, path in chart_items.items()
-    ) + "</div>"
+        + "</div>"
+    )
     return _section("Charts", body)
 
 
@@ -236,11 +232,12 @@ def _list(items: list[str], empty: str) -> str:
 
 def _pair_list(items: list[tuple[str, int]], unit: str, empty: str) -> str:
     if not items:
-        return f"<p class=\"muted\">{escape(empty)}</p>"
-    return "<ul>" + "".join(
-        f"<li>{escape(label)}: {count} {escape(unit)}</li>"
-        for label, count in items
-    ) + "</ul>"
+        return f'<p class="muted">{escape(empty)}</p>'
+    return (
+        "<ul>"
+        + "".join(f"<li>{escape(label)}: {count} {escape(unit)}</li>" for label, count in items)
+        + "</ul>"
+    )
 
 
 def _fmt_number(value: float | None) -> str:
@@ -269,21 +266,43 @@ def _path_attr(path: Path) -> str:
 
 def _css() -> str:
     return """
-    :root { color-scheme: light; --ink:#172018; --muted:#617060; --paper:#f7f2e8; --panel:#fffaf0; --accent:#2f6f4e; --line:#ded3bf; }
+    :root {
+      color-scheme:light; --ink:#172018; --muted:#617060; --paper:#f7f2e8;
+      --panel:#fffaf0; --accent:#2f6f4e; --line:#ded3bf;
+    }
     * { box-sizing: border-box; }
-    body { margin:0; font-family: Georgia, 'Times New Roman', serif; color:var(--ink); background: radial-gradient(circle at top left, #d7ead4, transparent 32rem), var(--paper); }
+    body {
+      margin:0; font-family:Georgia, 'Times New Roman', serif; color:var(--ink);
+      background:radial-gradient(circle at top left, #d7ead4, transparent 32rem),
+        var(--paper);
+    }
     .shell { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:48px 0; }
-    .hero { border:1px solid var(--line); background:linear-gradient(135deg, #fffdf7, #eaf4df); padding:36px; border-radius:28px; }
+    .hero {
+      border:1px solid var(--line); background:linear-gradient(135deg, #fffdf7, #eaf4df);
+      padding:36px; border-radius:28px;
+    }
     .hero p { color:var(--muted); margin:0 0 12px; }
     h1 { font-size:clamp(2rem, 7vw, 5rem); line-height:.95; margin:0 0 16px; }
     h2 { margin:0 0 18px; font-size:1.4rem; }
     h3 { margin:18px 0 8px; }
-    .panel { margin-top:22px; padding:28px; border:1px solid var(--line); border-radius:24px; background:rgba(255,250,240,.86); box-shadow:0 18px 60px rgba(50,40,20,.08); }
-    .cards, .charts, .issues, .split { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; }
-    .card, .issue, figure { margin:0; padding:18px; border:1px solid var(--line); border-radius:18px; background:#fffdf8; }
+    .panel {
+      margin-top:22px; padding:28px; border:1px solid var(--line); border-radius:24px;
+      background:rgba(255,250,240,.86); box-shadow:0 18px 60px rgba(50,40,20,.08);
+    }
+    .cards, .charts, .issues, .split {
+      display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px;
+    }
+    .card, .issue, figure {
+      margin:0; padding:18px; border:1px solid var(--line); border-radius:18px;
+      background:#fffdf8;
+    }
     .card span, .muted, small { color:var(--muted); }
     .card strong { display:block; margin-top:8px; font-size:1.8rem; }
-    .badge { display:inline-block; margin:0 8px 8px 0; padding:5px 10px; border-radius:999px; background:var(--accent); color:white; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+    .badge {
+      display:inline-block; margin:0 8px 8px 0; padding:5px 10px; border-radius:999px;
+      background:var(--accent); color:white; font-size:.78rem; text-transform:uppercase;
+      letter-spacing:.04em;
+    }
     .flaky { background:#b26a2c; }
     img { max-width:100%; height:auto; border-radius:14px; border:1px solid var(--line); }
     a { color:var(--accent); font-weight:700; }

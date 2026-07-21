@@ -47,9 +47,7 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
             top_failure_details=[("pytest failed", 3)],
             key_risks=["CI has repeated test failures."],
             recommended_actions=["Stabilize the flaky checkout test."],
-            repeated_issue_commentary=[
-                "`regressed`: test_failure (3 occurrences) - pytest failed"
-            ],
+            repeated_issue_commentary=["`regressed`: test_failure (3 occurrences) - pytest failed"],
         ),
         comparison=TrendComparison(
             baseline_available=True,

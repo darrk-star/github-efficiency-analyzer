@@ -52,9 +52,7 @@ def build_pr_rows(records: list[PullRequestRecord]) -> list[dict[str, object]]:
     for record in records:
         merge_hours = None
         if record.merged_at:
-            merge_hours = round(
-                (record.merged_at - record.created_at).total_seconds() / 3600, 2
-            )
+            merge_hours = round((record.merged_at - record.created_at).total_seconds() / 3600, 2)
 
         rows.append(
             {
@@ -97,9 +95,7 @@ def summarize_pull_requests(records: list[PullRequestRecord]) -> PullRequestMetr
     for record in records:
         author_counts[record.author] = author_counts.get(record.author, 0) + 1
 
-    top_authors = sorted(
-        author_counts.items(), key=lambda item: (-item[1], item[0].lower())
-    )[:5]
+    top_authors = sorted(author_counts.items(), key=lambda item: (-item[1], item[0].lower()))[:5]
 
     return PullRequestMetricsSummary(
         total_prs=len(records),
@@ -146,9 +142,7 @@ def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetrics
     cancelled_count = outcomes.count("cancelled")
     excluded_count = outcomes.count("excluded")
     failed_runs = [
-        record
-        for record in completed_records
-        if workflow_outcome(record.conclusion) == "failed"
+        record for record in completed_records if workflow_outcome(record.conclusion) == "failed"
     ]
     durations = [
         record.duration_minutes
@@ -266,8 +260,7 @@ def build_daily_failure_trend(records: list[WorkflowRunRecord]):
     failed_records = [
         record
         for record in records
-        if record.status == "completed"
-        and workflow_outcome(record.conclusion) == "failed"
+        if record.status == "completed" and workflow_outcome(record.conclusion) == "failed"
     ]
 
     if not failed_records:
@@ -288,8 +281,7 @@ def build_failed_workflow_breakdown(records: list[WorkflowRunRecord]):
     failed_records = [
         record
         for record in records
-        if record.status == "completed"
-        and workflow_outcome(record.conclusion) == "failed"
+        if record.status == "completed" and workflow_outcome(record.conclusion) == "failed"
     ]
     if not failed_records:
         return []
@@ -300,9 +292,7 @@ def build_failed_workflow_breakdown(records: list[WorkflowRunRecord]):
 
     return [
         {"workflow": workflow, "count": count}
-        for workflow, count in sorted(
-            grouped.items(), key=lambda item: (-item[1], item[0].lower())
-        )
+        for workflow, count in sorted(grouped.items(), key=lambda item: (-item[1], item[0].lower()))
     ]
 
 
@@ -321,10 +311,7 @@ def build_weekly_ci_digest(records: list[WorkflowRunRecord]) -> WeeklyCiDigest:
     category_counts: dict[str, int] = {}
     detail_counts: dict[str, int] = {}
     for record in records:
-        if (
-            record.status != "completed"
-            or workflow_outcome(record.conclusion) != "failed"
-        ):
+        if record.status != "completed" or workflow_outcome(record.conclusion) != "failed":
             continue
         category_counts[record.failure_category] = (
             category_counts.get(record.failure_category, 0) + 1
@@ -355,32 +342,35 @@ def build_weekly_ci_digest(records: list[WorkflowRunRecord]) -> WeeklyCiDigest:
     if worst_day is not None and total_failures:
         worst_day_ratio = round(worst_day[1] / total_failures * 100, 2)
         key_risks.append(
-            f"Failure volume concentrated on {worst_day[0]}, which accounts for {worst_day_ratio}% of failed runs."
+            f"Failure volume concentrated on {worst_day[0]}, which accounts for "
+            f"{worst_day_ratio}% of failed runs."
         )
 
     if noisiest_category is not None and total_failures:
         category_ratio = round(noisiest_category[1] / total_failures * 100, 2)
         key_risks.append(
-            f"{noisiest_category[0]} is the dominant CI failure mode at {category_ratio}% of failed runs."
+            f"{noisiest_category[0]} is the dominant CI failure mode at "
+            f"{category_ratio}% of failed runs."
         )
         recommended_actions.append(_recommend_action_for_category(noisiest_category[0]))
 
     if most_unstable_workflow is not None:
         key_risks.append(
-            f"Workflow '{most_unstable_workflow[0]}' is the main source of instability with {most_unstable_workflow[1]} failed runs."
+            f"Workflow '{most_unstable_workflow[0]}' is the main source of instability with "
+            f"{most_unstable_workflow[1]} failed runs."
         )
         recommended_actions.append(
-            f"Review the owner and recent changes for workflow '{most_unstable_workflow[0]}' and prioritize a stabilization pass."
+            f"Review the owner and recent changes for workflow "
+            f"'{most_unstable_workflow[0]}' and prioritize a stabilization pass."
         )
 
     for detail, count in top_failure_details[:3]:
-        repeated_issue_commentary.append(
-            f"Repeated issue ({count}x): {detail}"
-        )
+        repeated_issue_commentary.append(f"Repeated issue ({count}x): {detail}")
 
     if not recommended_actions and total_failures == 0:
         recommended_actions.append(
-            "CI remained stable in this window; keep monitoring for regressions rather than introducing new process changes."
+            "CI remained stable in this window; keep monitoring for regressions rather than "
+            "introducing new process changes."
         )
 
     recommended_actions = _deduplicate_preserve_order(recommended_actions)
@@ -417,19 +407,45 @@ def write_rows_to_csv(output_path: Path, rows: list[dict[str, object]]) -> None:
 
 def _recommend_action_for_category(category: str) -> str:
     category_actions = {
-        "test_failure": "Audit flaky tests, quarantine unstable cases, and tighten pre-merge test ownership.",
-        "lint_failure": "Shift lint checks left with local pre-commit hooks or editor integration to reduce avoidable CI noise.",
-        "build_failure": "Check recent build config or dependency changes and verify that build steps are reproducible locally.",
-        "dependency_failure": "Pin dependency versions and add lockfile validation to reduce install drift across runs.",
-        "infra_failure": "Review runner, network, and external service reliability; separate platform instability from code regressions.",
-        "permission_failure": "Recheck credentials, token scopes, and deployment permissions for the affected workflow path.",
-        "resource_failure": "Inspect memory and CPU pressure on runners and split oversized jobs where possible.",
-        "timeout": "Break long-running jobs into smaller stages or cache expensive steps to reduce timeout risk.",
-        "unknown_failure": "Inspect raw CI logs for the top failing workflow and add a new classification rule for the recurring pattern.",
+        "test_failure": (
+            "Audit flaky tests, quarantine unstable cases, and tighten pre-merge test ownership."
+        ),
+        "lint_failure": (
+            "Shift lint checks left with local pre-commit hooks or editor integration to reduce "
+            "avoidable CI noise."
+        ),
+        "build_failure": (
+            "Check recent build config or dependency changes and verify that build steps are "
+            "reproducible locally."
+        ),
+        "dependency_failure": (
+            "Pin dependency versions and add lockfile validation to reduce install drift across "
+            "runs."
+        ),
+        "infra_failure": (
+            "Review runner, network, and external service reliability; separate platform "
+            "instability from code regressions."
+        ),
+        "permission_failure": (
+            "Recheck credentials, token scopes, and deployment permissions for the affected "
+            "workflow path."
+        ),
+        "resource_failure": (
+            "Inspect memory and CPU pressure on runners and split oversized jobs where possible."
+        ),
+        "timeout": (
+            "Break long-running jobs into smaller stages or cache expensive steps to reduce "
+            "timeout risk."
+        ),
+        "unknown_failure": (
+            "Inspect raw CI logs for the top failing workflow and add a new classification rule "
+            "for the recurring pattern."
+        ),
     }
     return category_actions.get(
         category,
-        "Inspect the top failing runs in detail and turn the dominant pattern into a concrete remediation item.",
+        "Inspect the top failing runs in detail and turn the dominant pattern into a concrete "
+        "remediation item.",
     )
 
 
