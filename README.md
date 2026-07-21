@@ -124,6 +124,7 @@ The PR time window is based on PR creation time. Requested reviewers are exporte
 
 The command writes these files under `outputs/` by default:
 
+- `index.html` - the best single artifact to open during a portfolio review
 - `pull_requests.csv`
 - `workflow_runs.csv`
 - `summary.md`
@@ -172,11 +173,12 @@ Run the no-token portfolio demo when you want to show the project quickly withou
 
 ```powershell
 python -m app.main --demo --output-dir outputs/demo --snapshot-dir outputs/demo/snapshots
+Start-Process outputs/demo/index.html
 Get-Content outputs/demo/weekly_digest.md
 Get-Content outputs/demo/snapshots/*.json
 ```
 
-
+The demo writes `outputs/demo/index.html`, which is the recommended first file to open when showing the project without GitHub credentials.
 
 ## Quality Checks
 
@@ -223,6 +225,7 @@ python -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs
 # Run again after the next adjacent 14-day window to compare against the prior snapshot:
 python -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs/snapshots
 Get-Content outputs/snapshots/owner__repo__14__*.json
+```
 
 
 A live result still requires a GitHub token and repository access. The repository does not claim a fixed live demo output because GitHub activity changes over time.
@@ -273,6 +276,7 @@ github-efficiency-analyzer/
     demo.py
     failure_fingerprint.py
     github_client.py
+    html_report.py
     main.py
     metrics.py
     models.py
@@ -286,6 +290,7 @@ github-efficiency-analyzer/
     test_failure_fingerprint.py
     test_demo.py
     test_github_client.py
+    test_html_report.py
     test_main.py
     test_metrics.py
     test_report.py

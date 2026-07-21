@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ from dotenv import load_dotenv
 from app.charts import write_failed_workflow_chart, write_failure_trend_chart
 from app.config import AppConfig
 from app.demo import run_demo
+from app.html_report import write_html_report
 from app.github_client import GitHubApiError, GitHubClient
 from app.metrics import (
     build_daily_failure_trend,
@@ -161,6 +163,7 @@ def run(argv: list[str] | None = None) -> int:
         workflow_csv_path = output_dir / "workflow_runs.csv"
         md_path = output_dir / "summary.md"
         weekly_md_path = output_dir / "weekly_digest.md"
+        html_path = output_dir / "index.html"
         trend_chart_path = output_dir / "ci_failure_trend.png"
         workflow_chart_path = output_dir / "unstable_workflows.png"
 
@@ -171,6 +174,33 @@ def run(argv: list[str] | None = None) -> int:
         trend_chart_written = write_failure_trend_chart(daily_trend_frame, trend_chart_path)
         workflow_chart_written = write_failed_workflow_chart(
             failed_workflow_frame, workflow_chart_path
+        )
+        artifact_links: dict[str, Path] = {
+            "Pull request CSV": _relative_to_output(pr_csv_path, output_dir),
+            "Workflow CSV": _relative_to_output(workflow_csv_path, output_dir),
+            "Markdown summary": _relative_to_output(md_path, output_dir),
+            "Weekly digest": _relative_to_output(weekly_md_path, output_dir),
+            "Snapshot": _relative_to_output(snapshot_path, output_dir),
+        }
+        if trend_chart_written:
+            artifact_links["CI failure trend chart"] = _relative_to_output(
+                trend_chart_path,
+                output_dir
+            )
+        if workflow_chart_written:
+            artifact_links["Unstable workflows chart"] = _relative_to_output(
+                workflow_chart_path,
+                output_dir
+            )
+        write_html_report(
+            html_path,
+            args.repo,
+            args.days,
+            pr_summary,
+            workflow_summary,
+            weekly_digest,
+            comparison,
+            artifact_links,
         )
 
         print(f"Repository: {args.repo}")
@@ -186,6 +216,7 @@ def run(argv: list[str] | None = None) -> int:
         print(f"Workflow CSV report: {workflow_csv_path.resolve()}")
         print(f"Markdown summary: {md_path.resolve()}")
         print(f"Weekly digest: {weekly_md_path.resolve()}")
+        print(f"HTML report: {html_path.resolve()}")
         print(
             "CI failure trend chart: "
             + (str(trend_chart_path.resolve()) if trend_chart_written else "not generated")
@@ -203,6 +234,10 @@ def run(argv: list[str] | None = None) -> int:
 
 def main() -> None:
     raise SystemExit(run())
+
+
+def _relative_to_output(path: Path, output_dir: Path) -> Path:
+    return Path(os.path.relpath(path.resolve(), output_dir.resolve()))
 
 
 if __name__ == "__main__":

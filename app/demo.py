@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from app.charts import write_failed_workflow_chart, write_failure_trend_chart
+from app.html_report import write_html_report
 from app.metrics import (
     build_daily_failure_trend,
     build_failed_workflow_breakdown,
@@ -91,6 +93,7 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     workflow_csv_path = output_dir / "workflow_runs.csv"
     summary_path = output_dir / "summary.md"
     weekly_path = output_dir / "weekly_digest.md"
+    html_path = output_dir / "index.html"
     trend_chart_path = output_dir / "ci_failure_trend.png"
     workflow_chart_path = output_dir / "unstable_workflows.png"
 
@@ -117,11 +120,37 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
         if chart_written:
             chart_paths.append(chart_path)
 
+    artifact_links: dict[str, Path] = {
+        "Pull request CSV": _relative_to_output(pr_csv_path, output_dir),
+        "Workflow CSV": _relative_to_output(workflow_csv_path, output_dir),
+        "Markdown summary": _relative_to_output(summary_path, output_dir),
+        "Weekly digest": _relative_to_output(weekly_path, output_dir),
+        "Previous snapshot": _relative_to_output(previous_snapshot_path, output_dir),
+        "Current snapshot": _relative_to_output(current_snapshot_path, output_dir),
+    }
+    for chart_path in chart_paths:
+        artifact_links[chart_path.stem.replace("_", " ").title()] = _relative_to_output(
+            chart_path,
+            output_dir,
+        )
+
+    write_html_report(
+        html_path,
+        fixture.repo,
+        fixture.days,
+        pr_summary,
+        workflow_summary,
+        weekly_digest,
+        comparison,
+        artifact_links,
+    )
+
     written_paths = [
         pr_csv_path,
         workflow_csv_path,
         summary_path,
         weekly_path,
+        html_path,
         previous_snapshot_path,
         current_snapshot_path,
         *chart_paths,
@@ -207,3 +236,7 @@ def _parse_optional_datetime(value: object) -> datetime | None:
 
 def _parse_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _relative_to_output(path: Path, output_dir: Path) -> Path:
+    return Path(os.path.relpath(path.resolve(), output_dir.resolve()))

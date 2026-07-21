@@ -102,7 +102,14 @@ def test_run_writes_snapshot_and_weekly_digest_with_missing_baseline(
         encoding="utf-8"
     )
     assert "Baseline unavailable" in weekly_digest
-    assert "Snapshot: " in capsys.readouterr().out
+    html_report = (tmp_path / "outputs" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    assert "owner/repo" in html_report
+    assert "Baseline unavailable" in html_report
+    output = capsys.readouterr().out
+    assert "Snapshot: " in output
+    assert "HTML report: " in output
 
 
 def test_run_compares_against_adjacent_previous_snapshot(monkeypatch, tmp_path):
@@ -151,7 +158,7 @@ def test_run_compares_against_adjacent_previous_snapshot(monkeypatch, tmp_path):
     assert "Baseline unavailable" not in weekly_digest
 
 
-def test_run_demo_mode_does_not_use_github_client(monkeypatch, tmp_path):
+def test_run_demo_mode_does_not_use_github_client(monkeypatch, tmp_path, capsys):
     called = {"fetch_pull_requests": False, "fetch_workflow_runs": False}
 
     def fail_pull_requests(*args, **kwargs):
@@ -183,6 +190,7 @@ def test_run_demo_mode_does_not_use_github_client(monkeypatch, tmp_path):
         "fetch_pull_requests": False,
         "fetch_workflow_runs": False,
     }
+    assert "index.html" in capsys.readouterr().out
 
 
 class _FrozenDateTime(datetime):
