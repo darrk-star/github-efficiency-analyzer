@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from app.trends import compare_snapshots
 
 
 DEFAULT_FIXTURE_PATH = Path("examples/fixtures/portfolio_demo.json")
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -102,11 +104,18 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     write_weekly_digest_report(
         weekly_path, fixture.repo, fixture.days, weekly_digest, comparison
     )
-    chart_paths = []
-    if write_failure_trend_chart(daily_trend_frame, trend_chart_path):
-        chart_paths.append(trend_chart_path)
-    if write_failed_workflow_chart(failed_workflow_frame, workflow_chart_path):
-        chart_paths.append(workflow_chart_path)
+    chart_paths: list[Path] = []
+    for chart_fn, chart_data, chart_path in [
+        (write_failure_trend_chart, daily_trend_frame, trend_chart_path),
+        (write_failed_workflow_chart, failed_workflow_frame, workflow_chart_path),
+    ]:
+        try:
+            chart_written = chart_fn(chart_data, chart_path)
+        except Exception as exc:
+            LOGGER.debug("Skipping optional demo chart %s: %s", chart_path, exc)
+            chart_written = False
+        if chart_written:
+            chart_paths.append(chart_path)
 
     written_paths = [
         pr_csv_path,

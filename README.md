@@ -191,7 +191,7 @@ python -m ruff format --check .
 python -m mypy app
 ```
 
-The current branch has 55 passing tests: 38 from v1 and 17 added for v2 failure fingerprints, snapshots, trends, report rendering, and CLI integration.
+The current branch has 61 passing tests: 38 from v1, 17 from v2 failure trends, and 6 covering the offline portfolio demo.
 
 HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
 
@@ -270,6 +270,7 @@ github-efficiency-analyzer/
     charts.py
     ci_failure_analysis.py
     config.py
+    demo.py
     failure_fingerprint.py
     github_client.py
     main.py
@@ -278,8 +279,12 @@ github-efficiency-analyzer/
     report.py
     snapshots.py
     trends.py
+  examples/
+    fixtures/
+      portfolio_demo.json
   tests/
     test_failure_fingerprint.py
+    test_demo.py
     test_github_client.py
     test_main.py
     test_metrics.py

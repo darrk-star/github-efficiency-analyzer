@@ -56,7 +56,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo",
-        required=True,
         type=repo_name,
         help="GitHub repository in owner/name form.",
     )
@@ -88,7 +87,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="outputs/snapshots",
         help="Directory for compact CI trend snapshot files.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not args.demo and args.repo is None:
+        parser.error("--repo is required unless --demo is used")
+    return args
 
 
 def run(argv: list[str] | None = None) -> int:

@@ -47,9 +47,15 @@ def test_parse_args_accepts_snapshot_dir():
 
 
 def test_parse_args_accepts_demo_mode():
-    args = parse_args(["--repo", "owner/repo", "--demo"])
+    args = parse_args(["--demo"])
 
     assert args.demo is True
+    assert args.repo is None
+
+
+def test_parse_args_requires_repo_outside_demo_mode():
+    with pytest.raises(SystemExit):
+        parse_args([])
 
 
 def test_run_returns_nonzero_for_github_error(monkeypatch, capsys):

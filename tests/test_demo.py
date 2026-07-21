@@ -42,3 +42,20 @@ def test_run_demo_writes_reports_and_adjacent_snapshots(tmp_path):
     assert "`persistent`" in weekly_digest
     assert "`new`" in weekly_digest
     assert "suspected_flaky" in weekly_digest
+
+
+def test_run_demo_keeps_core_outputs_when_chart_backend_fails(monkeypatch, tmp_path):
+    def raise_chart_error(*args, **kwargs):
+        raise RuntimeError("chart backend unavailable")
+
+    monkeypatch.setattr("app.demo.write_failure_trend_chart", raise_chart_error)
+    monkeypatch.setattr("app.demo.write_failed_workflow_chart", raise_chart_error)
+
+    repo, paths = run_demo(tmp_path / "outputs", tmp_path / "snapshots")
+
+    assert repo == "acme/checkout-service"
+    assert tmp_path / "outputs" / "weekly_digest.md" in paths
+    assert (
+        tmp_path / "snapshots" / "acme__checkout-service__14__2026-07-20.json"
+        in paths
+    )
