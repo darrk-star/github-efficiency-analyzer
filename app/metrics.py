@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from statistics import mean, median
+from typing import TypedDict
 
 from app.failure_fingerprint import build_failure_fingerprint, normalize_failure_detail
 from app.models import PullRequestRecord, WorkflowRunRecord, workflow_outcome
@@ -21,6 +24,16 @@ class PullRequestMetricsSummary:
     avg_changed_files: float | None
     avg_comments: float | None
     top_authors: list[tuple[str, int]]
+
+
+class _IssueData(TypedDict):
+    category: str
+    normalized_detail: str
+    example_detail: str
+    count: int
+    workflows: set[str]
+    first_seen: datetime
+    last_seen: datetime
 
 
 @dataclass(frozen=True)
@@ -187,7 +200,7 @@ def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetrics
 def build_failure_issues(
     records: list[WorkflowRunRecord],
 ) -> tuple[list[FailureIssue], list[FailureObservation]]:
-    issue_data: dict[str, dict[str, object]] = {}
+    issue_data: dict[str, _IssueData] = {}
     observations: list[FailureObservation] = []
 
     for record in sorted(records, key=lambda item: item.created_at):
@@ -386,11 +399,11 @@ def build_weekly_ci_digest(records: list[WorkflowRunRecord]) -> WeeklyCiDigest:
     )
 
 
-def _average_or_none(values: list[float]) -> float | None:
+def _average_or_none(values: Sequence[int | float]) -> float | None:
     return round(mean(values), 2) if values else None
 
 
-def _median_or_none(values: list[float]) -> float | None:
+def _median_or_none(values: Sequence[int | float]) -> float | None:
     return round(median(values), 2) if values else None
 
 

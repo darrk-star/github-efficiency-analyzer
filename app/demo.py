@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -99,10 +100,11 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     write_markdown_report(summary_path, fixture.repo, fixture.days, pr_summary, workflow_summary)
     write_weekly_digest_report(weekly_path, fixture.repo, fixture.days, weekly_digest, comparison)
     chart_paths: list[Path] = []
-    for chart_fn, chart_data, chart_path in [
+    chart_jobs: list[tuple[Callable[[Any, Path], bool], Any, Path]] = [
         (write_failure_trend_chart, daily_trend_frame, trend_chart_path),
         (write_failed_workflow_chart, failed_workflow_frame, workflow_chart_path),
-    ]:
+    ]
+    for chart_fn, chart_data, chart_path in chart_jobs:
         try:
             chart_written = chart_fn(chart_data, chart_path)
         except Exception as exc:
