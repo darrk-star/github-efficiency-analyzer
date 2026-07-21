@@ -46,6 +46,12 @@ def test_parse_args_accepts_snapshot_dir():
     assert args.snapshot_dir == "tmp/snapshots"
 
 
+def test_parse_args_accepts_demo_mode():
+    args = parse_args(["--repo", "owner/repo", "--demo"])
+
+    assert args.demo is True
+
+
 def test_run_returns_nonzero_for_github_error(monkeypatch, capsys):
     def raise_api_error(*args, **kwargs):
         raise GitHubApiError("GitHub API unavailable")
@@ -137,6 +143,40 @@ def test_run_compares_against_adjacent_previous_snapshot(monkeypatch, tmp_path):
     )
     assert "`persistent`: test_failure (1 occurrences) - pytest failed" in weekly_digest
     assert "Baseline unavailable" not in weekly_digest
+
+
+def test_run_demo_mode_does_not_use_github_client(monkeypatch, tmp_path):
+    called = {"fetch_pull_requests": False, "fetch_workflow_runs": False}
+
+    def fail_pull_requests(*args, **kwargs):
+        called["fetch_pull_requests"] = True
+        raise AssertionError("live GitHub path should not run in demo mode")
+
+    def fail_workflow_runs(*args, **kwargs):
+        called["fetch_workflow_runs"] = True
+        raise AssertionError("live GitHub path should not run in demo mode")
+
+    monkeypatch.setattr("app.main.GitHubClient.fetch_pull_requests", fail_pull_requests)
+    monkeypatch.setattr("app.main.GitHubClient.fetch_workflow_runs", fail_workflow_runs)
+
+    assert (
+        run(
+            [
+                "--repo",
+                "owner/repo",
+                "--demo",
+                "--output-dir",
+                str(tmp_path / "outputs"),
+                "--snapshot-dir",
+                str(tmp_path / "snapshots"),
+            ]
+        )
+        == 0
+    )
+    assert called == {
+        "fetch_pull_requests": False,
+        "fetch_workflow_runs": False,
+    }
 
 
 class _FrozenDateTime(datetime):

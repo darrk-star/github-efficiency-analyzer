@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from app.charts import write_failed_workflow_chart, write_failure_trend_chart
 from app.config import AppConfig
+from app.demo import run_demo
 from app.github_client import GitHubApiError, GitHubClient
 from app.metrics import (
     build_daily_failure_trend,
@@ -76,6 +77,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="outputs",
         help="Directory where CSV and Markdown reports are written.",
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run the offline portfolio demo fixture instead of calling GitHub.",
+    )
 
     parser.add_argument(
         "--snapshot-dir",
@@ -91,6 +97,13 @@ def run(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     try:
+        if args.demo:
+            repo, written_paths = run_demo(Path(args.output_dir), Path(args.snapshot_dir))
+            print(f"Offline demo: {repo}")
+            for path in written_paths:
+                print(path.resolve())
+            return 0
+
         config = AppConfig.from_env()
         client = GitHubClient(config)
         created_after = datetime.now(tz=timezone.utc) - timedelta(days=args.days)

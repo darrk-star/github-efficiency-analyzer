@@ -166,6 +166,18 @@ python -m app.main --repo microsoft/vscode --days 14 --limit 20 --snapshot-dir o
 
 The CLI validates `owner/name`, positive `--days`, and positive `--limit` before making network calls. GitHub authentication, not-found, rate-limit, timeout, and retry exhaustion errors return a non-zero exit code with an actionable message.
 
+## Offline Portfolio Demo
+
+Run the no-token portfolio demo when you want to show the project quickly without GitHub credentials or network access:
+
+```powershell
+python -m app.main --demo --output-dir outputs/demo --snapshot-dir outputs/demo/snapshots
+Get-Content outputs/demo/weekly_digest.md
+Get-Content outputs/demo/snapshots/*.json
+```
+
+
+
 ## Quality Checks
 
 The same checks run locally and in `.github/workflows/ci.yml`:
@@ -207,12 +219,11 @@ Example findings from the historical sample:
 ## Failure Trend Demo
 
 ```powershell
-python -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs/snapshots`r`n# Run again after the next adjacent 14-day window to compare against the prior snapshot:`r`npython -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs/snapshots
+python -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs/snapshots
+# Run again after the next adjacent 14-day window to compare against the prior snapshot:
+python -m app.main --repo owner/repo --days 14 --limit 20 --snapshot-dir outputs/snapshots
 Get-Content outputs/snapshots/owner__repo__14__*.json
-Get-Content outputs/weekly_digest.md
-```
 
-The first run creates the baseline snapshot and reports `Baseline unavailable; this run establishes the first comparison snapshot.` A run in the next adjacent equal-length window can classify issues relative to the previous snapshot and include `new`, `persistent`, `regressed`, `resolved`, and `suspected_flaky` signals in `weekly_digest.md`. Re-running on the same date refreshes the current-day snapshot and does not treat it as the previous period.
 
 A live result still requires a GitHub token and repository access. The repository does not claim a fixed live demo output because GitHub activity changes over time.
 
