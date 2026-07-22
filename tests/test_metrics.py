@@ -1,18 +1,39 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
+import pytest
 
 from app.ci_failure_analysis import analyze_failure_log
 from app.metrics import (
     build_daily_failure_trend,
     build_failed_workflow_breakdown,
+    build_failure_issues,
     build_weekly_ci_digest,
     summarize_pull_requests,
     summarize_workflow_runs,
 )
-from app.models import PullRequestRecord, WorkflowRunRecord
+from app.models import PullRequestRecord, WorkflowRunRecord, workflow_outcome
 
 
 def _dt(hour: int) -> datetime:
-    return datetime(2026, 6, 1, hour, 0, tzinfo=timezone.utc)
+    return datetime(2026, 6, 1, hour, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "expected"),
+    [
+        ("success", "successful"),
+        ("failure", "failed"),
+        ("timed_out", "failed"),
+        ("action_required", "failed"),
+        ("cancelled", "cancelled"),
+        ("neutral", "excluded"),
+        ("skipped", "excluded"),
+        ("stale", "excluded"),
+        (None, "excluded"),
+    ],
+)
+def test_workflow_outcome_groups_github_conclusions(conclusion, expected):
+    assert workflow_outcome(conclusion) == expected
 
 
 def test_summarize_pull_requests_handles_merged_and_open_records():
@@ -126,11 +147,40 @@ def test_summarize_workflow_runs_groups_failures_and_success_rate():
     summary = summarize_workflow_runs(records)
 
     assert summary.total_runs == 3
-    assert summary.failed_runs == 2
-    assert summary.success_rate == 33.33
+    assert summary.successful_runs == 1
+    assert summary.failed_runs == 1
+    assert summary.cancelled_runs == 1
+    assert summary.excluded_runs == 0
+    assert summary.success_rate == 50.0
     assert summary.avg_duration_minutes == 40.0
-    assert summary.failure_categories == [("cancelled", 1), ("test_failure", 1)]
-    assert summary.top_failed_workflows == [("CI", 1), ("Lint", 1)]
+    assert summary.failure_categories == [("test_failure", 1)]
+    assert summary.top_failed_workflows == [("CI", 1)]
+
+
+def test_summarize_workflow_runs_preserves_zero_success_rate():
+    records = [
+        WorkflowRunRecord(
+            id=1,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="failure",
+            created_at=_dt(0),
+            updated_at=_dt(1),
+            run_started_at=_dt(0),
+            actor="alice",
+            branch="main",
+            duration_minutes=20.0,
+            html_url="https://example.com/runs/1",
+            jobs_url="https://example.com/runs/1/jobs",
+            failure_category="test_failure",
+            failure_detail="pytest failed",
+        )
+    ]
+
+    summary = summarize_workflow_runs(records)
+
+    assert summary.success_rate == 0.0
 
 
 def test_analyze_failure_log_detects_dependency_failure():
@@ -143,7 +193,9 @@ def test_analyze_failure_log_detects_dependency_failure():
     result = analyze_failure_log(log)
 
     assert result.category == "dependency_failure"
-    assert "could not find a version" in (result.detail or "").lower()
+    assert result.detail == (
+        "ERROR: Could not find a version that satisfies the requirement private-package==1.2.3"
+    )
 
 
 def test_analyze_failure_log_detects_permission_failure():
@@ -157,6 +209,86 @@ def test_analyze_failure_log_detects_permission_failure():
 
     assert result.category == "permission_failure"
     assert "permission denied" in (result.detail or "").lower()
+
+
+def test_generic_exit_code_does_not_claim_test_failure():
+    result = analyze_failure_log("Error: Process completed with exit code 1")
+
+    assert result.category == "unknown_failure"
+    assert result.source == "fallback"
+
+
+def test_build_failure_issues_clusters_equivalent_failures_and_tracks_success():
+    records = [
+        WorkflowRunRecord(
+            id=1,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="failure",
+            created_at=_dt(0),
+            updated_at=_dt(1),
+            run_started_at=_dt(0),
+            actor="alice",
+            branch="main",
+            duration_minutes=10.0,
+            html_url="https://example.com/runs/1",
+            jobs_url="https://example.com/runs/1/jobs",
+            failure_category="test_failure",
+            failure_detail=(
+                r"2026-07-20T10:11:12Z ERROR C:\builds\repo\tests\test_api.py:42 "
+                "request 12345 failed"
+            ),
+        ),
+        WorkflowRunRecord(
+            id=2,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="failure",
+            created_at=_dt(2),
+            updated_at=_dt(3),
+            run_started_at=_dt(2),
+            actor="bob",
+            branch="main",
+            duration_minutes=12.0,
+            html_url="https://example.com/runs/2",
+            jobs_url="https://example.com/runs/2/jobs",
+            failure_category="test_failure",
+            failure_detail=(
+                "2026-07-21T09:01:03Z ERROR /tmp/work/tests/test_api.py:99 request 67890 failed"
+            ),
+        ),
+        WorkflowRunRecord(
+            id=3,
+            name="CI",
+            event="pull_request",
+            status="completed",
+            conclusion="success",
+            created_at=_dt(4),
+            updated_at=_dt(5),
+            run_started_at=_dt(4),
+            actor="carol",
+            branch="main",
+            duration_minutes=8.0,
+            html_url="https://example.com/runs/3",
+            jobs_url="https://example.com/runs/3/jobs",
+            failure_category="passed",
+            failure_detail=None,
+        ),
+    ]
+
+    issues, observations = build_failure_issues(records)
+
+    assert len(issues) == 1
+    assert issues[0].count == 2
+    assert issues[0].workflows == ["CI"]
+    assert issues[0].first_seen == _dt(0)
+    assert issues[0].last_seen == _dt(2)
+    assert len(observations) == 3
+    assert observations[0].fingerprint == observations[1].fingerprint
+    assert observations[2].outcome == "success"
+    assert observations[2].fingerprint is None
 
 
 def test_build_weekly_ci_digest_aggregates_trends():
@@ -235,9 +367,12 @@ def test_build_weekly_ci_digest_aggregates_trends():
     breakdown = build_failed_workflow_breakdown(records)
     digest = build_weekly_ci_digest(records)
 
-    assert list(trend["count"]) == [2, 1]
-    assert list(breakdown["workflow"]) == ["CI", "Lint"]
-    assert digest.worst_day == ("2026-06-01", 2)
+    assert trend == [
+        {"date": "2026-06-01", "failure_category": "lint_failure", "count": 1},
+        {"date": "2026-06-01", "failure_category": "test_failure", "count": 2},
+    ]
+    assert [item["workflow"] for item in breakdown] == ["CI", "Lint"]
+    assert digest.worst_day == ("2026-06-01", 3)
     assert digest.noisiest_category == ("test_failure", 2)
     assert digest.most_unstable_workflow == ("CI", 2)
     assert digest.top_failure_details[0] == ("pytest failed", 2)

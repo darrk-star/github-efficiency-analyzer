@@ -2,6 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
+
+WorkflowOutcome = Literal["successful", "failed", "cancelled", "excluded"]
+
+
+def workflow_outcome(conclusion: str | None) -> WorkflowOutcome:
+    normalized = (conclusion or "").lower()
+    if normalized == "success":
+        return "successful"
+    if normalized == "cancelled":
+        return "cancelled"
+    if normalized in {"neutral", "skipped", "stale", ""}:
+        return "excluded"
+    return "failed"
 
 
 @dataclass(frozen=True)
@@ -45,3 +59,4 @@ class WorkflowRunRecord:
     jobs_url: str
     failure_category: str
     failure_detail: str | None
+    failure_source: str = "unknown"

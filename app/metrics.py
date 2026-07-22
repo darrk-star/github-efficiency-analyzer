@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from statistics import mean, median
+from typing import TypedDict
 
-from app.models import PullRequestRecord, WorkflowRunRecord
+from app.failure_fingerprint import build_failure_fingerprint, normalize_failure_detail
+from app.models import PullRequestRecord, WorkflowRunRecord, workflow_outcome
+from app.snapshots import FailureIssue, FailureObservation
 
 
 @dataclass(frozen=True)
@@ -21,10 +26,23 @@ class PullRequestMetricsSummary:
     top_authors: list[tuple[str, int]]
 
 
+class _IssueData(TypedDict):
+    category: str
+    normalized_detail: str
+    example_detail: str
+    count: int
+    workflows: set[str]
+    first_seen: datetime
+    last_seen: datetime
+
+
 @dataclass(frozen=True)
 class WorkflowMetricsSummary:
     total_runs: int
+    successful_runs: int
     failed_runs: int
+    cancelled_runs: int
+    excluded_runs: int
     success_rate: float | None
     avg_duration_minutes: float | None
     failure_categories: list[tuple[str, int]]
@@ -42,52 +60,12 @@ class WeeklyCiDigest:
     repeated_issue_commentary: list[str]
 
 
-def build_pr_dataframe(records: list[PullRequestRecord]):
-    import pandas as pd
-
-    rows = []
-    for record in records:
-        merge_hours = None
-        if record.merged_at:
-            merge_hours = round(
-                (record.merged_at - record.created_at).total_seconds() / 3600, 2
-            )
-
-        rows.append(
-            {
-                "number": record.number,
-                "title": record.title,
-                "author": record.author,
-                "state": record.state,
-                "created_at": record.created_at.isoformat(),
-                "updated_at": record.updated_at.isoformat(),
-                "closed_at": record.closed_at.isoformat() if record.closed_at else None,
-                "merged_at": record.merged_at.isoformat() if record.merged_at else None,
-                "merge_hours": merge_hours,
-                "additions": record.additions,
-                "deletions": record.deletions,
-                "total_changes": record.additions + record.deletions,
-                "changed_files": record.changed_files,
-                "review_comments": record.review_comments,
-                "issue_comments": record.comments,
-                "commits": record.commits,
-                "reviewer_count": len(record.reviewers),
-                "reviewers": ",".join(record.reviewers),
-                "url": record.url,
-            }
-        )
-
-    return pd.DataFrame(rows)
-
-
 def build_pr_rows(records: list[PullRequestRecord]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for record in records:
         merge_hours = None
         if record.merged_at:
-            merge_hours = round(
-                (record.merged_at - record.created_at).total_seconds() / 3600, 2
-            )
+            merge_hours = round((record.merged_at - record.created_at).total_seconds() / 3600, 2)
 
         rows.append(
             {
@@ -130,9 +108,7 @@ def summarize_pull_requests(records: list[PullRequestRecord]) -> PullRequestMetr
     for record in records:
         author_counts[record.author] = author_counts.get(record.author, 0) + 1
 
-    top_authors = sorted(
-        author_counts.items(), key=lambda item: (-item[1], item[0].lower())
-    )[:5]
+    top_authors = sorted(author_counts.items(), key=lambda item: (-item[1], item[0].lower()))[:5]
 
     return PullRequestMetricsSummary(
         total_prs=len(records),
@@ -145,33 +121,6 @@ def summarize_pull_requests(records: list[PullRequestRecord]) -> PullRequestMetr
         avg_comments=_average_or_none(comments),
         top_authors=top_authors,
     )
-
-
-def build_workflow_dataframe(records: list[WorkflowRunRecord]):
-    import pandas as pd
-
-    rows = [
-        {
-            "id": record.id,
-            "name": record.name,
-            "event": record.event,
-            "status": record.status,
-            "conclusion": record.conclusion,
-            "created_at": record.created_at.isoformat(),
-            "updated_at": record.updated_at.isoformat(),
-            "run_started_at": record.run_started_at.isoformat() if record.run_started_at else None,
-            "actor": record.actor,
-            "branch": record.branch,
-            "duration_minutes": record.duration_minutes,
-            "failure_category": record.failure_category,
-            "failure_detail": record.failure_detail,
-            "html_url": record.html_url,
-            "jobs_url": record.jobs_url,
-        }
-        for record in records
-    ]
-
-    return pd.DataFrame(rows)
 
 
 def build_workflow_rows(records: list[WorkflowRunRecord]) -> list[dict[str, object]]:
@@ -190,6 +139,7 @@ def build_workflow_rows(records: list[WorkflowRunRecord]) -> list[dict[str, obje
             "duration_minutes": record.duration_minutes,
             "failure_category": record.failure_category,
             "failure_detail": record.failure_detail,
+            "failure_source": record.failure_source,
             "html_url": record.html_url,
             "jobs_url": record.jobs_url,
         }
@@ -199,13 +149,13 @@ def build_workflow_rows(records: list[WorkflowRunRecord]) -> list[dict[str, obje
 
 def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetricsSummary:
     completed_records = [record for record in records if record.status == "completed"]
-    success_runs = [
-        record for record in completed_records if (record.conclusion or "").lower() == "success"
-    ]
+    outcomes = [workflow_outcome(record.conclusion) for record in completed_records]
+    successful_count = outcomes.count("successful")
+    failed_count = outcomes.count("failed")
+    cancelled_count = outcomes.count("cancelled")
+    excluded_count = outcomes.count("excluded")
     failed_runs = [
-        record
-        for record in completed_records
-        if (record.conclusion or "").lower() not in {"success", "neutral", "skipped"}
+        record for record in completed_records if workflow_outcome(record.conclusion) == "failed"
     ]
     durations = [
         record.duration_minutes
@@ -224,17 +174,22 @@ def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetrics
     failure_categories = sorted(
         category_counts.items(), key=lambda item: (-item[1], item[0].lower())
     )
+
     top_failed_workflows = sorted(
         workflow_failures.items(), key=lambda item: (-item[1], item[0].lower())
     )[:5]
 
     success_rate = None
-    if completed_records:
-        success_rate = round(len(success_runs) / len(completed_records) * 100, 2)
+    denominator = successful_count + failed_count
+    if denominator:
+        success_rate = round(successful_count / denominator * 100, 2)
 
     return WorkflowMetricsSummary(
         total_runs=len(completed_records),
-        failed_runs=len(failed_runs),
+        successful_runs=successful_count,
+        failed_runs=failed_count,
+        cancelled_runs=cancelled_count,
+        excluded_runs=excluded_count,
         success_rate=success_rate,
         avg_duration_minutes=_average_or_none(durations),
         failure_categories=failure_categories,
@@ -242,13 +197,83 @@ def summarize_workflow_runs(records: list[WorkflowRunRecord]) -> WorkflowMetrics
     )
 
 
+def build_failure_issues(
+    records: list[WorkflowRunRecord],
+) -> tuple[list[FailureIssue], list[FailureObservation]]:
+    issue_data: dict[str, _IssueData] = {}
+    observations: list[FailureObservation] = []
+
+    for record in sorted(records, key=lambda item: item.created_at):
+        if record.status != "completed":
+            continue
+
+        outcome = workflow_outcome(record.conclusion)
+        if outcome == "successful":
+            observations.append(
+                FailureObservation(
+                    observed_at=record.created_at,
+                    workflow=record.name,
+                    outcome="success",
+                    fingerprint=None,
+                )
+            )
+            continue
+        if outcome != "failed":
+            continue
+
+        fingerprint = build_failure_fingerprint(
+            record.failure_category,
+            record.failure_detail,
+        )
+        observations.append(
+            FailureObservation(
+                observed_at=record.created_at,
+                workflow=record.name,
+                outcome="failed",
+                fingerprint=fingerprint,
+            )
+        )
+        data = issue_data.setdefault(
+            fingerprint,
+            {
+                "category": record.failure_category,
+                "normalized_detail": normalize_failure_detail(record.failure_detail),
+                "example_detail": record.failure_detail or "Unknown failure",
+                "count": 0,
+                "workflows": set(),
+                "first_seen": record.created_at,
+                "last_seen": record.created_at,
+            },
+        )
+        data["count"] = int(data["count"]) + 1
+        workflows = data["workflows"]
+        if isinstance(workflows, set):
+            workflows.add(record.name)
+        data["first_seen"] = min(data["first_seen"], record.created_at)
+        data["last_seen"] = max(data["last_seen"], record.created_at)
+
+    issues = [
+        FailureIssue(
+            fingerprint=fingerprint,
+            category=str(data["category"]),
+            normalized_detail=str(data["normalized_detail"]),
+            example_detail=str(data["example_detail"]),
+            count=int(data["count"]),
+            workflows=sorted(str(item) for item in data["workflows"]),
+            first_seen=data["first_seen"],
+            last_seen=data["last_seen"],
+        )
+        for fingerprint, data in issue_data.items()
+    ]
+    issues.sort(key=lambda item: (-item.count, item.fingerprint))
+    return issues, observations
+
+
 def build_daily_failure_trend(records: list[WorkflowRunRecord]):
     failed_records = [
         record
         for record in records
-        if record.status == "completed"
-        and record.failure_category not in {"passed", "cancelled"}
-        and record.conclusion
+        if record.status == "completed" and workflow_outcome(record.conclusion) == "failed"
     ]
 
     if not failed_records:
@@ -269,9 +294,7 @@ def build_failed_workflow_breakdown(records: list[WorkflowRunRecord]):
     failed_records = [
         record
         for record in records
-        if record.status == "completed"
-        and record.failure_category not in {"passed", "cancelled"}
-        and record.conclusion
+        if record.status == "completed" and workflow_outcome(record.conclusion) == "failed"
     ]
     if not failed_records:
         return []
@@ -282,9 +305,7 @@ def build_failed_workflow_breakdown(records: list[WorkflowRunRecord]):
 
     return [
         {"workflow": workflow, "count": count}
-        for workflow, count in sorted(
-            grouped.items(), key=lambda item: (-item[1], item[0].lower())
-        )
+        for workflow, count in sorted(grouped.items(), key=lambda item: (-item[1], item[0].lower()))
     ]
 
 
@@ -303,11 +324,7 @@ def build_weekly_ci_digest(records: list[WorkflowRunRecord]) -> WeeklyCiDigest:
     category_counts: dict[str, int] = {}
     detail_counts: dict[str, int] = {}
     for record in records:
-        if (
-            record.status != "completed"
-            or record.failure_category in {"passed", "cancelled"}
-            or not record.conclusion
-        ):
+        if record.status != "completed" or workflow_outcome(record.conclusion) != "failed":
             continue
         category_counts[record.failure_category] = (
             category_counts.get(record.failure_category, 0) + 1
@@ -338,32 +355,35 @@ def build_weekly_ci_digest(records: list[WorkflowRunRecord]) -> WeeklyCiDigest:
     if worst_day is not None and total_failures:
         worst_day_ratio = round(worst_day[1] / total_failures * 100, 2)
         key_risks.append(
-            f"Failure volume concentrated on {worst_day[0]}, which accounts for {worst_day_ratio}% of failed runs."
+            f"Failure volume concentrated on {worst_day[0]}, which accounts for "
+            f"{worst_day_ratio}% of failed runs."
         )
 
     if noisiest_category is not None and total_failures:
         category_ratio = round(noisiest_category[1] / total_failures * 100, 2)
         key_risks.append(
-            f"{noisiest_category[0]} is the dominant CI failure mode at {category_ratio}% of failed runs."
+            f"{noisiest_category[0]} is the dominant CI failure mode at "
+            f"{category_ratio}% of failed runs."
         )
         recommended_actions.append(_recommend_action_for_category(noisiest_category[0]))
 
     if most_unstable_workflow is not None:
         key_risks.append(
-            f"Workflow '{most_unstable_workflow[0]}' is the main source of instability with {most_unstable_workflow[1]} failed runs."
+            f"Workflow '{most_unstable_workflow[0]}' is the main source of instability with "
+            f"{most_unstable_workflow[1]} failed runs."
         )
         recommended_actions.append(
-            f"Review the owner and recent changes for workflow '{most_unstable_workflow[0]}' and prioritize a stabilization pass."
+            f"Review the owner and recent changes for workflow "
+            f"'{most_unstable_workflow[0]}' and prioritize a stabilization pass."
         )
 
     for detail, count in top_failure_details[:3]:
-        repeated_issue_commentary.append(
-            f"Repeated issue ({count}x): {detail}"
-        )
+        repeated_issue_commentary.append(f"Repeated issue ({count}x): {detail}")
 
     if not recommended_actions and total_failures == 0:
         recommended_actions.append(
-            "CI remained stable in this window; keep monitoring for regressions rather than introducing new process changes."
+            "CI remained stable in this window; keep monitoring for regressions rather than "
+            "introducing new process changes."
         )
 
     recommended_actions = _deduplicate_preserve_order(recommended_actions)
@@ -379,11 +399,11 @@ def build_weekly_ci_digest(records: list[WorkflowRunRecord]) -> WeeklyCiDigest:
     )
 
 
-def _average_or_none(values: list[float]) -> float | None:
+def _average_or_none(values: Sequence[int | float]) -> float | None:
     return round(mean(values), 2) if values else None
 
 
-def _median_or_none(values: list[float]) -> float | None:
+def _median_or_none(values: Sequence[int | float]) -> float | None:
     return round(median(values), 2) if values else None
 
 
@@ -400,19 +420,45 @@ def write_rows_to_csv(output_path: Path, rows: list[dict[str, object]]) -> None:
 
 def _recommend_action_for_category(category: str) -> str:
     category_actions = {
-        "test_failure": "Audit flaky tests, quarantine unstable cases, and tighten pre-merge test ownership.",
-        "lint_failure": "Shift lint checks left with local pre-commit hooks or editor integration to reduce avoidable CI noise.",
-        "build_failure": "Check recent build config or dependency changes and verify that build steps are reproducible locally.",
-        "dependency_failure": "Pin dependency versions and add lockfile validation to reduce install drift across runs.",
-        "infra_failure": "Review runner, network, and external service reliability; separate platform instability from code regressions.",
-        "permission_failure": "Recheck credentials, token scopes, and deployment permissions for the affected workflow path.",
-        "resource_failure": "Inspect memory and CPU pressure on runners and split oversized jobs where possible.",
-        "timeout": "Break long-running jobs into smaller stages or cache expensive steps to reduce timeout risk.",
-        "unknown_failure": "Inspect raw CI logs for the top failing workflow and add a new classification rule for the recurring pattern.",
+        "test_failure": (
+            "Audit flaky tests, quarantine unstable cases, and tighten pre-merge test ownership."
+        ),
+        "lint_failure": (
+            "Shift lint checks left with local pre-commit hooks or editor integration to reduce "
+            "avoidable CI noise."
+        ),
+        "build_failure": (
+            "Check recent build config or dependency changes and verify that build steps are "
+            "reproducible locally."
+        ),
+        "dependency_failure": (
+            "Pin dependency versions and add lockfile validation to reduce install drift across "
+            "runs."
+        ),
+        "infra_failure": (
+            "Review runner, network, and external service reliability; separate platform "
+            "instability from code regressions."
+        ),
+        "permission_failure": (
+            "Recheck credentials, token scopes, and deployment permissions for the affected "
+            "workflow path."
+        ),
+        "resource_failure": (
+            "Inspect memory and CPU pressure on runners and split oversized jobs where possible."
+        ),
+        "timeout": (
+            "Break long-running jobs into smaller stages or cache expensive steps to reduce "
+            "timeout risk."
+        ),
+        "unknown_failure": (
+            "Inspect raw CI logs for the top failing workflow and add a new classification rule "
+            "for the recurring pattern."
+        ),
     }
     return category_actions.get(
         category,
-        "Inspect the top failing runs in detail and turn the dominant pattern into a concrete remediation item.",
+        "Inspect the top failing runs in detail and turn the dominant pattern into a concrete "
+        "remediation item.",
     )
 
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 class FailureAnalysis:
     category: str
     detail: str | None
+    source: str
 
 
 def analyze_failure_log(log_text: str, fallback_detail: str | None = None) -> FailureAnalysis:
@@ -81,23 +82,37 @@ def analyze_failure_log(log_text: str, fallback_detail: str | None = None) -> Fa
                 "2 failed",
                 "3 failed",
                 "failures:",
-                "error: process completed with exit code 1",
             ],
         ),
     ]
 
     for category, keywords in patterns:
-        for keyword in keywords:
-            if keyword in normalized:
-                return FailureAnalysis(category=category, detail=_extract_detail(log_text, keyword))
+        if any(keyword in normalized for keyword in keywords):
+            return FailureAnalysis(
+                category=category,
+                detail=_extract_first_matching_detail(log_text, keywords),
+                source="logs",
+            )
 
     if re.search(r"exit code\s+137|killed", normalized):
-        return FailureAnalysis(category="resource_failure", detail=_extract_detail(log_text, "exit code"))
+        return FailureAnalysis(
+            category="resource_failure",
+            detail=_extract_detail(log_text, "exit code"),
+            source="logs",
+        )
 
     if re.search(r"timed out|time limit exceeded", normalized):
-        return FailureAnalysis(category="timeout", detail=_extract_detail(log_text, "timed out"))
+        return FailureAnalysis(
+            category="timeout",
+            detail=_extract_detail(log_text, "timed out"),
+            source="logs",
+        )
 
-    return FailureAnalysis(category="unknown_failure", detail=fallback_detail or _extract_first_error(log_text))
+    return FailureAnalysis(
+        category="unknown_failure",
+        detail=fallback_detail or _extract_first_error(log_text),
+        source="fallback",
+    )
 
 
 def _extract_detail(log_text: str, keyword: str) -> str | None:
@@ -105,6 +120,14 @@ def _extract_detail(log_text: str, keyword: str) -> str | None:
     keyword_lower = keyword.lower()
     for line in lines:
         if keyword_lower in line.lower():
+            return line.strip()[:300]
+    return _extract_first_error(log_text)
+
+
+def _extract_first_matching_detail(log_text: str, keywords: list[str]) -> str | None:
+    for line in log_text.splitlines():
+        lowered = line.lower()
+        if any(keyword in lowered for keyword in keywords):
             return line.strip()[:300]
     return _extract_first_error(log_text)
 
