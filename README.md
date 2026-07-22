@@ -1,6 +1,17 @@
 # GitHub Efficiency Analyzer
 
-A Python CLI that turns GitHub pull request and Actions data into explainable engineering-efficiency reports. It demonstrates resilient REST API integration, explicit metric semantics, deterministic CI log classification, stable failure fingerprints, typed domain models, automated tests, and CI quality checks.
+> Turn GitHub pull request and Actions data into explainable engineering-efficiency insights.
+
+[Live report](https://darrk-star.github.io/github-efficiency-analyzer/) | [Offline demo](#offline-portfolio-demo) | [Run tests](#quality-checks)
+
+![Portfolio report preview](assets/ci_failure_trend.png)
+
+## What This Demonstrates
+
+- Resilient GitHub REST API integration with pagination, bounded retries, rate-limit handling, and typed payload translation.
+- Explainable CI diagnosis using deterministic classification, evidence extraction, and stable failure fingerprints.
+- Snapshot-based trend comparison that identifies `new`, `persistent`, `regressed`, `resolved`, and `suspected_flaky` issues.
+- Reproducible CSV, Markdown, PNG, JSON, and static HTML reporting with automated tests and GitHub Pages deployment.
 
 This is a focused portfolio project for Python backend and engineering productivity roles. It is designed to be easy to run, inspect, test, and discuss in an interview.
 
@@ -193,7 +204,7 @@ python -m ruff format --check .
 python -m mypy app
 ```
 
-The current branch has 61 passing tests: 38 from v1, 17 from v2 failure trends, and 6 covering the offline portfolio demo.
+The current branch has 64 passing tests covering the core analyzer, failure trends, offline demo, HTML reporting, and deployment workflow contract.
 
 HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
 
