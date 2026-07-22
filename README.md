@@ -4,7 +4,7 @@
 
 [Live report](https://darrk-star.github.io/github-efficiency-analyzer/) | [Offline demo](#offline-portfolio-demo) | [Run tests](#quality-checks)
 
-![Portfolio report preview](assets/ci_failure_trend.png)
+![Portfolio report preview](assets/portfolio-report-preview.png)
 
 ## What This Demonstrates
 
