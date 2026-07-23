@@ -184,6 +184,46 @@ def test_fetch_workflow_runs_stops_at_creation_time_boundary():
     assert len(session.calls) == 1
 
 
+def test_fetch_workflow_runs_returns_empty_for_empty_payload():
+    client = GitHubClient(AppConfig(), session=FakeSession([FakeResponse({})]))
+
+    assert client.fetch_workflow_runs("owner/repo", cutoff(), limit=10) == []
+
+
+def test_failed_workflow_uses_metadata_when_log_archive_is_malformed():
+    jobs = {
+        "jobs": [
+            {
+                "name": "build",
+                "conclusion": "failure",
+                "steps": [{"name": "compile", "conclusion": "failure"}],
+            }
+        ]
+    }
+    session = FakeSession(
+        [
+            FakeResponse({"workflow_runs": [workflow_run(3, "failure")]}),
+            FakeResponse(jobs),
+            FakeResponse({}, headers={"Content-Type": "application/zip"}, content=b"not-a-zip"),
+            FakeResponse({"workflow_runs": []}),
+        ]
+    )
+
+    records = GitHubClient(AppConfig(), session=session).fetch_workflow_runs(
+        "owner/repo", cutoff(), limit=10
+    )
+
+    assert records[0].failure_category == "build_failure"
+    assert records[0].failure_source == "job_metadata"
+
+
+def test_config_rejects_non_numeric_retry_count(monkeypatch):
+    monkeypatch.setenv("GITHUB_MAX_RETRIES", "many")
+
+    with pytest.raises(ValueError, match="GITHUB_MAX_RETRIES must be a non-negative integer"):
+        AppConfig.from_env()
+
+
 @pytest.mark.parametrize("repo", ["owner", "/repo", "owner/", "owner/repo/extra"])
 def test_split_repo_rejects_invalid_values(repo):
     with pytest.raises(ValueError, match="owner/name"):
