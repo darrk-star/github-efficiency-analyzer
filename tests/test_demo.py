@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from app.demo import load_demo_fixture, run_demo
 from app.models import PullRequestRecord, WorkflowRunRecord
 
@@ -56,3 +58,13 @@ def test_run_demo_keeps_core_outputs_when_chart_backend_fails(monkeypatch, tmp_p
     assert tmp_path / "outputs" / "weekly_digest.md" in paths
     assert tmp_path / "outputs" / "index.html" in paths
     assert tmp_path / "snapshots" / "acme__checkout-service__14__2026-07-20.json" in paths
+
+
+def test_run_demo_does_not_hide_unexpected_chart_programming_errors(monkeypatch, tmp_path):
+    def raise_programming_error(*args, **kwargs):
+        raise ValueError("unexpected chart data shape")
+
+    monkeypatch.setattr("app.demo.write_failure_trend_chart", raise_programming_error)
+
+    with pytest.raises(ValueError, match="unexpected chart data shape"):
+        run_demo(tmp_path / "outputs", tmp_path / "snapshots")

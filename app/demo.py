@@ -107,7 +107,7 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     for chart_fn, chart_data, chart_path in chart_jobs:
         try:
             chart_written = chart_fn(chart_data, chart_path)
-        except Exception as exc:
+        except (OSError, RuntimeError) as exc:
             LOGGER.debug("Skipping optional demo chart %s: %s", chart_path, exc)
             chart_written = False
         if chart_written:
