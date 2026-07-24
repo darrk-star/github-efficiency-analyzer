@@ -97,7 +97,14 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     current_snapshot_path = write_snapshot(snapshot_dir, current_snapshot)
     write_rows_to_csv(pr_csv_path, pr_rows)
     write_rows_to_csv(workflow_csv_path, workflow_rows)
-    write_markdown_report(summary_path, fixture.repo, fixture.days, pr_summary, workflow_summary)
+    write_markdown_report(
+        summary_path,
+        fixture.repo,
+        fixture.days,
+        fixture.current_generated_at.date(),
+        pr_summary,
+        workflow_summary,
+    )
     write_weekly_digest_report(weekly_path, fixture.repo, fixture.days, weekly_digest, comparison)
     chart_paths: list[Path] = []
     chart_jobs: list[tuple[Callable[[Any, Path], bool], Any, Path]] = [
@@ -131,6 +138,7 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
         html_path,
         fixture.repo,
         fixture.days,
+        fixture.current_generated_at.date(),
         pr_summary,
         workflow_summary,
         weekly_digest,

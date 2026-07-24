@@ -1,5 +1,7 @@
-from app.metrics import WeeklyCiDigest
-from app.report import render_weekly_digest
+from datetime import date
+
+from app.metrics import PullRequestMetricsSummary, WeeklyCiDigest, WorkflowMetricsSummary
+from app.report import render_weekly_digest, write_markdown_report
 from app.trends import TrendComparison, TrendIssue
 
 
@@ -49,3 +51,18 @@ def test_weekly_digest_renders_top_actionable_issue():
 
     assert "`regressed` suspected_flaky" in output
     assert "test_failure (4 occurrences) - pytest failed" in output
+
+
+def test_markdown_report_includes_analysis_end_date(tmp_path):
+    output_path = tmp_path / "summary.md"
+
+    write_markdown_report(
+        output_path,
+        "owner/repo",
+        14,
+        date(2026, 7, 20),
+        PullRequestMetricsSummary(0, 0, 0, None, None, None, None, None, []),
+        WorkflowMetricsSummary(0, 0, 0, 0, 0, None, None, [], []),
+    )
+
+    assert "Analysis end date: 2026-07-20 UTC" in output_path.read_text(encoding="utf-8")

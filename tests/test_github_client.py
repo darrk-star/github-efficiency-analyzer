@@ -109,6 +109,57 @@ def test_fetch_pull_requests_filters_old_items_without_stopping_pagination():
     assert [record.number for record in records] == [2, 3]
 
 
+def test_fetch_pull_requests_excludes_records_at_or_after_fixed_end_boundary():
+    session = FakeSession(
+        [
+            FakeResponse(
+                [
+                    pr_summary(1, "2026-07-20T00:00:00Z"),
+                    pr_summary(2, "2026-07-19T23:59:59Z"),
+                ]
+            ),
+            FakeResponse([]),
+            FakeResponse(pr_detail(2)),
+        ]
+    )
+    client = GitHubClient(AppConfig(), session=session)
+
+    records = client.fetch_pull_requests(
+        "owner/repo",
+        datetime(2026, 7, 1, tzinfo=UTC),
+        created_before=datetime(2026, 7, 20, tzinfo=UTC),
+        limit=2,
+    )
+
+    assert [record.number for record in records] == [2]
+
+
+def test_fetch_workflow_runs_skips_records_at_or_after_fixed_end_boundary():
+    session = FakeSession(
+        [
+            FakeResponse(
+                {
+                    "workflow_runs": [
+                        workflow_run(1, "success", "2026-07-20T00:00:00Z"),
+                        workflow_run(2, "success", "2026-07-19T00:00:00Z"),
+                    ]
+                }
+            ),
+            FakeResponse({"workflow_runs": []}),
+        ]
+    )
+    client = GitHubClient(AppConfig(), session=session)
+
+    records = client.fetch_workflow_runs(
+        "owner/repo",
+        datetime(2026, 7, 1, tzinfo=UTC),
+        created_before=datetime(2026, 7, 20, tzinfo=UTC),
+        limit=10,
+    )
+
+    assert [record.id for record in records] == [2]
+
+
 def test_fetch_workflow_runs_does_not_fetch_jobs_or_logs_for_success():
     session = FakeSession(
         [

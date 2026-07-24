@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from app.metrics import PullRequestMetricsSummary, WeeklyCiDigest, WorkflowMetricsSummary
@@ -10,6 +11,7 @@ def write_markdown_report(
     output_path: Path,
     repo: str,
     days: int,
+    analysis_end_date: date,
     pr_summary: PullRequestMetricsSummary,
     workflow_summary: WorkflowMetricsSummary,
 ) -> None:
@@ -17,6 +19,7 @@ def write_markdown_report(
         f"# GitHub Repo Efficiency Report: {repo}",
         "",
         f"- Time window: last {days} days",
+        f"- Analysis end date: {analysis_end_date.isoformat()} UTC",
         "",
         "## Pull Request Metrics",
         "",

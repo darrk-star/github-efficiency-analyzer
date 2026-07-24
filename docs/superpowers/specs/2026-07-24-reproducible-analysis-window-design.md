@@ -33,3 +33,7 @@ Existing commands that only supply `--repo`, `--days`, and `--limit` continue to
 ## Tests
 
 Tests cover successful parsing, malformed and future dates, fixed-window collection boundaries, deterministic snapshot filenames, report display metadata, and confirmation that demo mode retains fixture behavior. Existing no-option tests continue to prove the default current-UTC behavior.
+
+## Implementation Note
+
+Implemented with `--end-date YYYY-MM-DD` as an exclusive midnight-UTC boundary. Live collection uses the half-open interval `[end_date - days, end_date)`, and the same resolved timestamp drives snapshot persistence and report metadata. Verified with `python -m pytest -q`, static checks, and the offline demo command.

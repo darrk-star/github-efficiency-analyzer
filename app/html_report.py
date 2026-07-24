@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from html import escape
 from pathlib import Path
 
@@ -11,6 +12,7 @@ def write_html_report(
     output_path: Path,
     repo: str,
     days: int,
+    analysis_end_date: date,
     pr_summary: PullRequestMetricsSummary,
     workflow_summary: WorkflowMetricsSummary,
     digest: WeeklyCiDigest,
@@ -22,6 +24,7 @@ def write_html_report(
         render_html_report(
             repo=repo,
             days=days,
+            analysis_end_date=analysis_end_date,
             pr_summary=pr_summary,
             workflow_summary=workflow_summary,
             digest=digest,
@@ -35,6 +38,7 @@ def write_html_report(
 def render_html_report(
     repo: str,
     days: int,
+    analysis_end_date: date,
     pr_summary: PullRequestMetricsSummary,
     workflow_summary: WorkflowMetricsSummary,
     digest: WeeklyCiDigest,
@@ -65,6 +69,7 @@ def render_html_report(
                 f"      <p>Last {days} days of pull request throughput, CI "
                 "stability, recurring failures, and generated artifacts.</p>"
             ),
+            f"      <p>Reporting window ends {escape(analysis_end_date.isoformat())} UTC.</p>",
             "    </section>",
             _pull_request_section(pr_summary),
             _workflow_section(workflow_summary),

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 
 from app.github_client import GitHubApiError
-from app.main import format_optional_number, parse_args, positive_int, repo_name, run
+from app.main import end_date, format_optional_number, parse_args, positive_int, repo_name, run
 from app.models import WorkflowRunRecord
 from app.snapshots import (
     FailureIssue,
@@ -42,6 +42,18 @@ def test_parse_args_accepts_snapshot_dir():
     args = parse_args(["--repo", "owner/repo", "--snapshot-dir", "tmp/snapshots"])
 
     assert args.snapshot_dir == "tmp/snapshots"
+
+
+def test_parse_args_accepts_fixed_end_date():
+    args = parse_args(["--repo", "owner/repo", "--end-date", "2026-07-24"])
+
+    assert args.end_date == date(2026, 7, 24)
+
+
+@pytest.mark.parametrize("value", ["2026/07/24", "2026-02-30", "not-a-date"])
+def test_end_date_rejects_invalid_iso_dates(value):
+    with pytest.raises(argparse.ArgumentTypeError, match="YYYY-MM-DD"):
+        end_date(value)
 
 
 def test_parse_args_accepts_demo_mode():
@@ -102,6 +114,51 @@ def test_run_writes_snapshot_and_weekly_digest_with_missing_baseline(monkeypatch
     output = capsys.readouterr().out
     assert "Snapshot: " in output
     assert "HTML report: " in output
+
+
+def test_run_uses_fixed_end_date_for_collection_and_snapshot(monkeypatch, tmp_path):
+    observed: dict[str, datetime] = {}
+
+    def fetch_pull_requests(_client, *, created_after, created_before, **_kwargs):
+        observed["created_after"] = created_after
+        observed["created_before"] = created_before
+        return []
+
+    monkeypatch.setattr("app.main.GitHubClient.fetch_pull_requests", fetch_pull_requests)
+    monkeypatch.setattr("app.main.GitHubClient.fetch_workflow_runs", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("app.main.write_failure_trend_chart", lambda *args, **kwargs: False)
+    monkeypatch.setattr("app.main.write_failed_workflow_chart", lambda *args, **kwargs: False)
+
+    result = run(
+        [
+            "--repo",
+            "owner/repo",
+            "--days",
+            "14",
+            "--end-date",
+            "2026-07-20",
+            "--output-dir",
+            str(tmp_path / "outputs"),
+            "--snapshot-dir",
+            str(tmp_path / "snapshots"),
+        ]
+    )
+
+    assert result == 0
+    assert observed["created_after"] == datetime(2026, 7, 6, tzinfo=UTC)
+    assert observed["created_before"] == datetime(2026, 7, 20, tzinfo=UTC)
+    assert (tmp_path / "snapshots" / "owner__repo__14__2026-07-20.json").exists()
+
+
+def test_run_rejects_future_end_date_before_collection(monkeypatch, capsys):
+    def fail_if_collected(*_args, **_kwargs):
+        raise AssertionError("collection should not run")
+
+    monkeypatch.setattr("app.main.GitHubClient.fetch_pull_requests", fail_if_collected)
+    monkeypatch.setattr("app.main.datetime", _FrozenDateTime)
+
+    assert run(["--repo", "owner/repo", "--end-date", "2026-07-21"]) == 1
+    assert "future" in capsys.readouterr().err.lower()
 
 
 def test_run_compares_against_adjacent_previous_snapshot(monkeypatch, tmp_path):

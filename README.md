@@ -5,7 +5,7 @@
 [![CI](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/ci.yml)
 [![Deploy portfolio report to Pages](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/pages.yml/badge.svg)](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/pages.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-68%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-77%20passing-2ea44f)
 
 [Live report](https://darrk-star.github.io/github-efficiency-analyzer/) | [Offline demo](#offline-portfolio-demo) | [Run tests](#quality-checks)
 
@@ -17,7 +17,7 @@ This project turns GitHub Pull Request and Actions activity into an explainable 
 
 ### Resume-ready description
 
-> Built a Python GitHub engineering-efficiency analyzer that collects Pull Request and Actions data through paginated, retry-aware REST calls; classifies CI failures with evidence-backed rules and stable SHA-256 fingerprints; compares adjacent snapshots to identify new, persistent, regressed, resolved, and suspected-flaky issues; and publishes reproducible HTML/Markdown/CSV/PNG/JSON reports through GitHub Actions and GitHub Pages. Added 68 deterministic tests covering API pagination, retries, metrics, snapshots, trend detection, offline demo generation, and report rendering.
+> Built a Python GitHub engineering-efficiency analyzer that collects Pull Request and Actions data through paginated, retry-aware REST calls; classifies CI failures with evidence-backed rules and stable SHA-256 fingerprints; compares adjacent snapshots to identify new, persistent, regressed, resolved, and suspected-flaky issues; and publishes reproducible HTML/Markdown/CSV/PNG/JSON reports through GitHub Actions and GitHub Pages. Added 77 deterministic tests covering API pagination, retries, metrics, snapshots, trend detection, offline demo generation, and report rendering.
 
 ### 中文简历描述
 
@@ -200,13 +200,28 @@ Run an analysis:
 python -m app.main --repo microsoft/vscode --days 14 --limit 20
 ```
 
+Reproduce a fixed UTC reporting window when reviewing a historical period or comparing
+adjacent snapshots:
+
+```powershell
+python -m app.main --repo microsoft/vscode --days 14 --end-date 2026-07-20
+```
+
+`--end-date` is an exclusive midnight-UTC boundary. With `--days 14`, this command
+analyzes records created from `2026-07-06T00:00:00Z` up to, but not including,
+`2026-07-20T00:00:00Z`. It produces a stable snapshot filename and resolves the same
+adjacent-window baseline when rerun.
+
 Use a custom snapshot directory when demonstrating failure trends:
 
 ```powershell
 python -m app.main --repo microsoft/vscode --days 14 --limit 20 --snapshot-dir outputs/snapshots
 ```
 
-The CLI validates `owner/name`, positive `--days`, and positive `--limit` before making network calls. GitHub authentication, not-found, rate-limit, timeout, and retry exhaustion errors return a non-zero exit code with an actionable message.
+The CLI validates `owner/name`, positive `--days`, positive `--limit`, and non-future
+`--end-date` values before making network calls. GitHub authentication, not-found,
+rate-limit, timeout, and retry exhaustion errors return a non-zero exit code with an
+actionable message.
 
 ## Offline Portfolio Demo
 
@@ -234,7 +249,7 @@ python -m ruff format --check .
 python -m mypy app
 ```
 
-The current branch has 68 passing tests covering the core analyzer, failure trends, offline demo, HTML reporting, and deployment workflow contract.
+The current branch has 77 passing tests covering the core analyzer, failure trends, offline demo, HTML reporting, and deployment workflow contract.
 
 HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
 

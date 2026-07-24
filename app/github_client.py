@@ -37,6 +37,7 @@ class GitHubClient:
         self,
         repo: str,
         created_after: datetime,
+        created_before: datetime | None = None,
         state: str = "all",
         limit: int = 100,
     ) -> list[PullRequestRecord]:
@@ -62,7 +63,9 @@ class GitHubClient:
 
             for item in page_items:
                 created_at = self._parse_dt(item["created_at"])
-                if created_at >= created_after:
+                if created_at >= created_after and (
+                    created_before is None or created_at < created_before
+                ):
                     pr_summaries.append(item)
                 if len(pr_summaries) >= limit:
                     break
@@ -75,6 +78,7 @@ class GitHubClient:
         self,
         repo: str,
         created_after: datetime,
+        created_before: datetime | None = None,
         limit: int = 100,
     ) -> list[WorkflowRunRecord]:
         owner, name = self._split_repo(repo)
@@ -99,6 +103,8 @@ class GitHubClient:
                 created_at = self._parse_dt(run["created_at"])
                 if created_at < created_after:
                     return records
+                if created_before is not None and created_at >= created_before:
+                    continue
 
                 conclusion = (run.get("conclusion") or "").lower()
                 jobs: list[dict[str, Any]] = []

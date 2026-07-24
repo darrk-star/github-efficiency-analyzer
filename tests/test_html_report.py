@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from app.html_report import write_html_report
@@ -18,6 +19,7 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
         output_path=output_path,
         repo="owner/repo",
         days=14,
+        analysis_end_date=date(2026, 7, 20),
         pr_summary=PullRequestMetricsSummary(
             total_prs=8,
             merged_prs=5,
@@ -89,6 +91,7 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
     html = output_path.read_text(encoding="utf-8")
     assert "<!doctype html>" in html
     assert "owner/repo" in html
+    assert "Reporting window ends 2026-07-20 UTC" in html
     assert "Pull Request Metrics" in html
     assert "Workflow success rate" in html
     assert "Recurring CI Issues" in html
@@ -107,6 +110,7 @@ def test_write_html_report_handles_missing_baseline_and_optional_artifacts(tmp_p
         output_path=output_path,
         repo="owner/repo",
         days=7,
+        analysis_end_date=date(2026, 7, 20),
         pr_summary=PullRequestMetricsSummary(
             total_prs=0,
             merged_prs=0,
