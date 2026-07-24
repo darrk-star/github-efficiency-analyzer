@@ -1,4 +1,5 @@
 from pathlib import Path
+from tkinter import TclError
 
 import pytest
 
@@ -69,6 +70,20 @@ def test_run_demo_keeps_core_outputs_when_chart_backend_fails(monkeypatch, tmp_p
     assert tmp_path / "outputs" / "weekly_digest.md" in paths
     assert tmp_path / "outputs" / "index.html" in paths
     assert tmp_path / "snapshots" / "acme__checkout-service__14__2026-07-20.json" in paths
+
+
+def test_run_demo_keeps_core_outputs_when_tk_chart_backend_fails(monkeypatch, tmp_path):
+    def raise_tk_error(*args, **kwargs):
+        raise TclError("tk backend unavailable")
+
+    monkeypatch.setattr("app.demo.write_failure_trend_chart", raise_tk_error)
+    monkeypatch.setattr("app.demo.write_failed_workflow_chart", raise_tk_error)
+
+    repo, paths = run_demo(tmp_path / "outputs", tmp_path / "snapshots")
+
+    assert repo == "acme/checkout-service"
+    assert tmp_path / "outputs" / "weekly_digest.md" in paths
+    assert tmp_path / "outputs" / "index.html" in paths
 
 
 def test_run_demo_does_not_hide_unexpected_chart_programming_errors(monkeypatch, tmp_path):

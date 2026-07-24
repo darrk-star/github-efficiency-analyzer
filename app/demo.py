@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from tkinter import TclError
 from typing import Any
 
 from app.charts import write_failed_workflow_chart, write_failure_trend_chart
@@ -136,7 +137,7 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     for chart_fn, chart_data, chart_path in chart_jobs:
         try:
             chart_written = chart_fn(chart_data, chart_path)
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError, TclError) as exc:
             LOGGER.debug("Skipping optional demo chart %s: %s", chart_path, exc)
             chart_written = False
         if chart_written:
