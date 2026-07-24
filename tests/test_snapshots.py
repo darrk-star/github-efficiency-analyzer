@@ -1,9 +1,11 @@
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
 from app.snapshots import (
     FailureIssue,
     FailureObservation,
     Snapshot,
+    load_recent_snapshots,
     previous_snapshot_path,
     read_snapshot,
     snapshot_filename,
@@ -67,3 +69,40 @@ def test_previous_snapshot_path_uses_adjacent_equal_window(tmp_path):
     )
 
     assert path.name == "owner__repo__14__2026-07-06.json"
+
+
+def test_load_recent_snapshots_returns_adjacent_compatible_chain_oldest_first(tmp_path):
+    current = sample_snapshot()
+    previous = replace(current, generated_at=current.generated_at - timedelta(days=14))
+    older = replace(current, generated_at=current.generated_at - timedelta(days=28))
+    write_snapshot(tmp_path, older)
+    write_snapshot(tmp_path, previous)
+
+    assert load_recent_snapshots(tmp_path, current, windows=4) == [older, previous, current]
+
+
+def test_load_recent_snapshots_stops_at_missing_or_invalid_history(tmp_path):
+    current = sample_snapshot()
+    previous = replace(current, generated_at=current.generated_at - timedelta(days=14))
+    write_snapshot(tmp_path, previous)
+
+    assert load_recent_snapshots(tmp_path, current, windows=4) == [previous, current]
+
+    malformed_path = tmp_path / snapshot_filename("owner/repo", 14, "2026-06-22")
+    malformed_path.write_text("{bad", encoding="utf-8")
+    assert load_recent_snapshots(tmp_path, current, windows=4) == [previous, current]
+
+
+def test_load_recent_snapshots_stops_when_metadata_does_not_match(tmp_path):
+    current = sample_snapshot()
+    incompatible = replace(
+        current,
+        repo="other/repo",
+        generated_at=current.generated_at - timedelta(days=14),
+    )
+    expected_path = tmp_path / snapshot_filename("owner/repo", 14, "2026-07-06")
+    write_snapshot(tmp_path, incompatible)
+    incompatible_path = tmp_path / snapshot_filename("other/repo", 14, "2026-07-06")
+    incompatible_path.replace(expected_path)
+
+    assert load_recent_snapshots(tmp_path, current, windows=4) == [current]

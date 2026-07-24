@@ -57,6 +57,30 @@ def previous_snapshot_path(
     return directory / snapshot_filename(repo, window_days, previous_end.isoformat())
 
 
+def load_recent_snapshots(directory: Path, current: Snapshot, windows: int) -> list[Snapshot]:
+    snapshots = [current]
+    end_date = current.generated_at.date()
+
+    for _ in range(windows - 1):
+        end_date -= timedelta(days=current.window_days)
+        path = directory / snapshot_filename(
+            current.repo,
+            current.window_days,
+            end_date.isoformat(),
+        )
+        if not path.exists():
+            break
+        try:
+            candidate = read_snapshot(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            break
+        if candidate.repo != current.repo or candidate.window_days != current.window_days:
+            break
+        snapshots.append(candidate)
+
+    return list(reversed(snapshots))
+
+
 def write_snapshot(directory: Path, snapshot: Snapshot) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / snapshot_filename(
