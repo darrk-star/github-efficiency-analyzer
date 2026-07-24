@@ -24,6 +24,72 @@ class TrendComparison:
     issues: list[TrendIssue]
 
 
+@dataclass(frozen=True)
+class RollingTrendIssue:
+    fingerprint: str
+    category: str
+    window_counts: list[int]
+    workflows: list[str]
+    example_detail: str
+    observed_windows: int
+    trend_direction: str
+    confidence: str
+    suspected_flaky: bool
+    transition_count: int
+
+
+@dataclass(frozen=True)
+class RollingTrendComparison:
+    issues: list[RollingTrendIssue]
+    observed_windows: int
+
+
+def build_rolling_trends(snapshots: list[Snapshot]) -> RollingTrendComparison:
+    issue_by_fingerprint = {
+        issue.fingerprint: issue for snapshot in snapshots for issue in snapshot.issues
+    }
+    observations = [observation for snapshot in snapshots for observation in snapshot.observations]
+    issues: list[RollingTrendIssue] = []
+
+    for fingerprint, issue in issue_by_fingerprint.items():
+        window_counts = [
+            next(
+                (
+                    candidate.count
+                    for candidate in snapshot.issues
+                    if candidate.fingerprint == fingerprint
+                ),
+                0,
+            )
+            for snapshot in snapshots
+        ]
+        transition_count = _count_flaky_recurrences(observations, fingerprint)
+        issues.append(
+            RollingTrendIssue(
+                fingerprint=fingerprint,
+                category=issue.category,
+                window_counts=window_counts,
+                workflows=sorted(issue.workflows),
+                example_detail=issue.example_detail,
+                observed_windows=len(snapshots),
+                trend_direction=_rolling_direction(window_counts),
+                confidence=_rolling_confidence(len(snapshots)),
+                suspected_flaky=transition_count > 0,
+                transition_count=transition_count,
+            )
+        )
+
+    priority = {"worsening": 0, "stable": 1, "improving": 2, "insufficient_data": 3}
+    issues.sort(
+        key=lambda item: (
+            priority[item.trend_direction],
+            -item.window_counts[-1],
+            item.fingerprint,
+        )
+    )
+    return RollingTrendComparison(issues=issues, observed_windows=len(snapshots))
+
+
 def compare_snapshots(previous: Snapshot | None, current: Snapshot) -> TrendComparison:
     previous_by_fingerprint = {
         issue.fingerprint: issue for issue in (previous.issues if previous else [])
@@ -79,6 +145,24 @@ def compare_snapshots(previous: Snapshot | None, current: Snapshot) -> TrendComp
         )
     )
     return TrendComparison(baseline_available=previous is not None, issues=trend_issues)
+
+
+def _rolling_direction(window_counts: list[int]) -> str:
+    if len(window_counts) < 2:
+        return "insufficient_data"
+    if window_counts[-1] > window_counts[0]:
+        return "worsening"
+    if window_counts[-1] < window_counts[0]:
+        return "improving"
+    return "stable"
+
+
+def _rolling_confidence(observed_windows: int) -> str:
+    if observed_windows == 1:
+        return "low"
+    if observed_windows < 4:
+        return "medium"
+    return "high"
 
 
 def _build_trend_issue(

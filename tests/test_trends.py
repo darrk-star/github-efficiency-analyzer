@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from app.snapshots import FailureIssue, FailureObservation, Snapshot
-from app.trends import compare_snapshots
+from app.trends import build_rolling_trends, compare_snapshots
 
 BASE = datetime(2026, 7, 20, tzinfo=UTC)
 
@@ -36,12 +36,13 @@ def observation(
 def snapshot(
     issues: list[FailureIssue],
     observations: list[FailureObservation] | None = None,
+    generated_at: datetime = BASE,
 ) -> Snapshot:
     return Snapshot(
         schema_version=1,
         repo="owner/repo",
         window_days=14,
-        generated_at=BASE,
+        generated_at=generated_at,
         total_runs=10,
         failed_runs=sum(item.count for item in issues),
         issues=issues,
@@ -104,3 +105,36 @@ def test_different_fingerprints_around_success_are_not_suspected_flaky():
 
     assert by_fingerprint["first"].suspected_flaky is False
     assert by_fingerprint["second"].suspected_flaky is False
+
+
+def test_build_rolling_trends_zero_fills_counts_and_sets_direction_confidence():
+    snapshots = [
+        snapshot(
+            [issue("improving", 5), issue("worsening", 1)],
+            generated_at=BASE - timedelta(days=42),
+        ),
+        snapshot(
+            [issue("improving", 3), issue("worsening", 2)],
+            generated_at=BASE - timedelta(days=28),
+        ),
+        snapshot(
+            [issue("improving", 1), issue("worsening", 4)],
+            generated_at=BASE - timedelta(days=14),
+        ),
+        snapshot([issue("worsening", 7)], generated_at=BASE),
+    ]
+
+    by_fingerprint = {item.fingerprint: item for item in build_rolling_trends(snapshots).issues}
+
+    assert by_fingerprint["improving"].window_counts == [5, 3, 1, 0]
+    assert by_fingerprint["improving"].trend_direction == "improving"
+    assert by_fingerprint["worsening"].window_counts == [1, 2, 4, 7]
+    assert by_fingerprint["worsening"].confidence == "high"
+
+
+def test_build_rolling_trends_reports_coverage_and_insufficient_data():
+    one = build_rolling_trends([snapshot([issue("fp", 2)])]).issues[0]
+    two = build_rolling_trends([snapshot([issue("fp", 2)]), snapshot([issue("fp", 2)])]).issues[0]
+
+    assert (one.trend_direction, one.confidence) == ("insufficient_data", "low")
+    assert (two.trend_direction, two.confidence) == ("stable", "medium")
