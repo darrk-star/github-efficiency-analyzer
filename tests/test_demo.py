@@ -15,6 +15,7 @@ def test_demo_fixture_parses_into_records():
     assert fixture.previous_workflow_runs
     assert fixture.current_workflow_runs
     assert isinstance(fixture.pull_requests[0], PullRequestRecord)
+    assert fixture.pull_requests[0].first_reviewer == "bob"
     assert isinstance(fixture.current_workflow_runs[0], WorkflowRunRecord)
 
 
@@ -43,6 +44,11 @@ def test_run_demo_writes_reports_and_adjacent_snapshots(tmp_path):
     html_report = (output_dir / "index.html").read_text(encoding="utf-8")
     assert "acme/checkout-service" in html_report
     assert "Recurring CI Issues" in html_report
+    assert "Average first review response" in html_report
+
+    pr_csv = (output_dir / "pull_requests.csv").read_text(encoding="utf-8")
+    assert "first_reviewer" in pr_csv
+    assert "bob" in pr_csv
 
 
 def test_run_demo_keeps_core_outputs_when_chart_backend_fails(monkeypatch, tmp_path):

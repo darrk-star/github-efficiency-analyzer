@@ -58,6 +58,7 @@ def pr_detail(number: int) -> dict[str, object]:
         "comments": 0,
         "commits": 1,
         "requested_reviewers": [],
+        "reviews_url": f"https://api.example.com/pulls/{number}/reviews",
         "html_url": f"https://example.com/pulls/{number}",
     }
 
@@ -95,7 +96,9 @@ def test_fetch_pull_requests_filters_old_items_without_stopping_pagination():
             ),
             FakeResponse([pr_summary(3, "2026-07-17T00:00:00Z")]),
             FakeResponse(pr_detail(2)),
+            FakeResponse([]),
             FakeResponse(pr_detail(3)),
+            FakeResponse([]),
         ]
     )
     client = GitHubClient(AppConfig(), session=session)
@@ -109,6 +112,88 @@ def test_fetch_pull_requests_filters_old_items_without_stopping_pagination():
     assert [record.number for record in records] == [2, 3]
 
 
+def test_fetch_pull_requests_uses_earliest_qualifying_external_review():
+    detail = pr_detail(1)
+    detail["created_at"] = "2026-07-10T10:00:00Z"
+    session = FakeSession(
+        [
+            FakeResponse([pr_summary(1, "2026-07-10T10:00:00Z")]),
+            FakeResponse(detail),
+            FakeResponse(
+                [
+                    {
+                        "user": {"login": "alice"},
+                        "state": "APPROVED",
+                        "submitted_at": "2026-07-10T10:30:00Z",
+                    },
+                    {
+                        "user": {"login": "bob"},
+                        "state": "PENDING",
+                        "submitted_at": "2026-07-10T10:15:00Z",
+                    },
+                    {
+                        "user": {"login": "carol"},
+                        "state": "COMMENTED",
+                        "submitted_at": "2026-07-10T11:00:00Z",
+                    },
+                    {
+                        "user": {"login": "dave"},
+                        "state": "CHANGES_REQUESTED",
+                        "submitted_at": "2026-07-10T10:45:00Z",
+                    },
+                ]
+            ),
+            FakeResponse([]),
+        ]
+    )
+
+    records = GitHubClient(AppConfig(), session=session).fetch_pull_requests(
+        "owner/repo", datetime(2026, 7, 1, tzinfo=UTC), limit=1
+    )
+
+    assert records[0].first_reviewer == "dave"
+    assert records[0].first_review_at == datetime(2026, 7, 10, 10, 45, tzinfo=UTC)
+
+
+def test_fetch_pull_requests_ignores_invalid_review_events():
+    detail = pr_detail(1)
+    detail["created_at"] = "2026-07-10T10:00:00Z"
+    session = FakeSession(
+        [
+            FakeResponse([pr_summary(1, "2026-07-10T10:00:00Z")]),
+            FakeResponse(detail),
+            FakeResponse(
+                [
+                    {
+                        "user": {"login": "alice"},
+                        "state": "COMMENTED",
+                        "submitted_at": "2026-07-10T10:20:00Z",
+                    },
+                    {
+                        "user": {"login": "bob"},
+                        "state": "DISMISSED",
+                        "submitted_at": "2026-07-10T10:20:00Z",
+                    },
+                    {"user": {"login": "carol"}, "state": "APPROVED", "submitted_at": None},
+                    {
+                        "user": {"login": "dave"},
+                        "state": "APPROVED",
+                        "submitted_at": "2026-07-10T09:59:00Z",
+                    },
+                ]
+            ),
+            FakeResponse([]),
+        ]
+    )
+
+    records = GitHubClient(AppConfig(), session=session).fetch_pull_requests(
+        "owner/repo", datetime(2026, 7, 1, tzinfo=UTC), limit=1
+    )
+
+    assert records[0].first_reviewer is None
+    assert records[0].first_review_at is None
+
+
 def test_fetch_pull_requests_excludes_records_at_or_after_fixed_end_boundary():
     session = FakeSession(
         [
@@ -120,6 +205,7 @@ def test_fetch_pull_requests_excludes_records_at_or_after_fixed_end_boundary():
             ),
             FakeResponse([]),
             FakeResponse(pr_detail(2)),
+            FakeResponse([]),
         ]
     )
     client = GitHubClient(AppConfig(), session=session)

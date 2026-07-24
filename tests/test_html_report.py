@@ -30,6 +30,10 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
             avg_changed_files=4.5,
             avg_comments=2.0,
             top_authors=[("alice", 5), ("bob", 3)],
+            avg_first_review_hours=3.5,
+            median_first_review_hours=3.0,
+            unreviewed_prs=1,
+            top_first_reviewers=[("bob", 2)],
         ),
         workflow_summary=WorkflowMetricsSummary(
             total_runs=20,
@@ -95,6 +99,9 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
     assert "Pull Request Metrics" in html
     assert "Workflow success rate" in html
     assert "Recurring CI Issues" in html
+    assert "Average first review response" in html
+    assert "PRs without external review" in html
+    assert "Top First Reviewers" in html
     assert "regressed" in html
     assert "suspected flaky" in html
     assert "resolved" in html

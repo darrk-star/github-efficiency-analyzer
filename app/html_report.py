@@ -95,10 +95,19 @@ def _pull_request_section(pr_summary: PullRequestMetricsSummary) -> str:
         ("Average PR size", _fmt_number(pr_summary.avg_pr_size)),
         ("Average changed files", _fmt_number(pr_summary.avg_changed_files)),
         ("Average comments", _fmt_number(pr_summary.avg_comments)),
+        ("Average first review response", _fmt_hours(pr_summary.avg_first_review_hours)),
+        ("Median first review response", _fmt_hours(pr_summary.median_first_review_hours)),
+        ("PRs without external review", pr_summary.unreviewed_prs),
     ]
     body = '<div class="cards">' + "".join(_card(label, value) for label, value in cards) + "</div>"
     body += "<h3>Top Authors</h3>"
     body += _pair_list(pr_summary.top_authors, "PRs", "No pull requests found.")
+    body += "<h3>Top First Reviewers</h3>"
+    body += _pair_list(
+        pr_summary.top_first_reviewers,
+        "first reviews",
+        "No qualifying external reviews found.",
+    )
     return _section("Pull Request Metrics", body)
 
 

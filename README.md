@@ -5,7 +5,7 @@
 [![CI](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/ci.yml)
 [![Deploy portfolio report to Pages](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/pages.yml/badge.svg)](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/pages.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-77%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-82%20passing-2ea44f)
 
 [Live report](https://darrk-star.github.io/github-efficiency-analyzer/) | [Offline demo](#offline-portfolio-demo) | [Run tests](#quality-checks)
 
@@ -17,7 +17,7 @@ This project turns GitHub Pull Request and Actions activity into an explainable 
 
 ### Resume-ready description
 
-> Built a Python GitHub engineering-efficiency analyzer that collects Pull Request and Actions data through paginated, retry-aware REST calls; classifies CI failures with evidence-backed rules and stable SHA-256 fingerprints; compares adjacent snapshots to identify new, persistent, regressed, resolved, and suspected-flaky issues; and publishes reproducible HTML/Markdown/CSV/PNG/JSON reports through GitHub Actions and GitHub Pages. Added 77 deterministic tests covering API pagination, retries, metrics, snapshots, trend detection, offline demo generation, and report rendering.
+> Built a Python GitHub engineering-efficiency analyzer that collects Pull Request and Actions data through paginated, retry-aware REST calls; classifies CI failures with evidence-backed rules and stable SHA-256 fingerprints; compares adjacent snapshots to identify new, persistent, regressed, resolved, and suspected-flaky issues; and publishes reproducible HTML/Markdown/CSV/PNG/JSON reports through GitHub Actions and GitHub Pages. Added 82 deterministic tests covering API pagination, retries, metrics, snapshots, trend detection, offline demo generation, and report rendering.
 
 ### 中文简历描述
 
@@ -91,7 +91,7 @@ Workflow runs are returned newest first by creation time, so workflow collection
 
 ### Fewer expensive requests
 
-Successful, neutral, skipped, and cancelled workflow runs do not need diagnostic logs. Jobs and log archives are fetched only for unsuccessful runs that need classification. This keeps the normal path cheaper and makes the trade-off visible in tests.
+Successful, neutral, skipped, and cancelled workflow runs do not need diagnostic logs. Jobs and log archives are fetched only for unsuccessful runs that need classification. Review events are fetched only for PRs already selected by `--limit`. This keeps API cost bounded and makes the trade-off visible in tests.
 
 ### Explicit outcome semantics
 
@@ -146,9 +146,14 @@ A fingerprint is marked `suspected_flaky` when the same workflow contains a `fai
 - Average PR size: additions plus deletions
 - Average changed files
 - Average comment volume: issue comments plus review comments
+- Average and median first external review response time
+- Pull requests without an external review and top first reviewers
 - Top authors by PR count
 
-The PR time window is based on PR creation time. Requested reviewers are exported for context, but they are not presented as historical reviewer participation because the GitHub field does not reliably represent completed reviews.
+The PR time window is based on PR creation time. First review response uses the earliest
+external `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED` event submitted after PR creation;
+author self-reviews, `PENDING`, and `DISMISSED` events are excluded. Requested reviewers are
+still exported only as current-request context, not historical participation.
 
 ### GitHub Actions
 
@@ -249,7 +254,7 @@ python -m ruff format --check .
 python -m mypy app
 ```
 
-The current branch has 77 passing tests covering the core analyzer, failure trends, offline demo, HTML reporting, and deployment workflow contract.
+The current branch has 82 passing tests covering the core analyzer, failure trends, offline demo, HTML reporting, and deployment workflow contract.
 
 HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
 

@@ -47,3 +47,7 @@ The offline fixture gains deterministic first-review values through its PR data 
 ## Tests
 
 Tests cover review-event pagination, author filtering, excluded states, missing timestamps, timestamps before PR creation, no-review PRs, summary calculation, stable reviewer ranking, CSV fields, report rendering, and fixture compatibility. All HTTP tests continue to use fake sessions and deterministic payloads.
+
+## Implementation Note
+
+Implemented with paginated review collection for each PR selected by `--limit`. The client stores only the earliest qualifying external review timestamp and login, then pure metrics aggregate response times and unreplied PRs. Verified with the full pytest suite, static checks, and the offline demo.

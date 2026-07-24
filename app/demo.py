@@ -197,6 +197,8 @@ def _parse_pull_request(item: dict[str, Any]) -> PullRequestRecord:
         commits=int(item["commits"]),
         reviewers=tuple(str(value) for value in item["reviewers"]),
         url=str(item["url"]),
+        first_review_at=_parse_optional_datetime(item.get("first_review_at")),
+        first_reviewer=(str(item["first_reviewer"]) if item.get("first_reviewer") else None),
     )
 
 

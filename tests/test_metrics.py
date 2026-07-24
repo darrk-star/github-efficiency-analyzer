@@ -7,6 +7,7 @@ from app.metrics import (
     build_daily_failure_trend,
     build_failed_workflow_breakdown,
     build_failure_issues,
+    build_pr_rows,
     build_weekly_ci_digest,
     summarize_pull_requests,
     summarize_workflow_runs,
@@ -87,6 +88,68 @@ def test_summarize_pull_requests_handles_merged_and_open_records():
     assert summary.avg_changed_files == 2.0
     assert summary.avg_comments == 2.5
     assert summary.top_authors == [("alice", 2)]
+
+
+def test_summarize_pull_requests_includes_first_review_response_metrics():
+    def record(number, reviewer, review_hour):
+        return PullRequestRecord(
+            number=number,
+            title=str(number),
+            author="author",
+            state="open",
+            created_at=_dt(0),
+            updated_at=_dt(1),
+            closed_at=None,
+            merged_at=None,
+            additions=1,
+            deletions=1,
+            changed_files=1,
+            review_comments=0,
+            comments=0,
+            commits=1,
+            reviewers=(),
+            url=f"https://example.com/{number}",
+            first_review_at=_dt(review_hour) if review_hour is not None else None,
+            first_reviewer=reviewer,
+        )
+
+    summary = summarize_pull_requests(
+        [record(1, "zoe", 2), record(2, "amy", 4), record(3, None, None)]
+    )
+
+    assert summary.avg_first_review_hours == 3.0
+    assert summary.median_first_review_hours == 3.0
+    assert summary.unreviewed_prs == 1
+    assert summary.top_first_reviewers == [("amy", 1), ("zoe", 1)]
+
+
+def test_build_pr_rows_includes_first_review_fields():
+    record = PullRequestRecord(
+        number=1,
+        title="First",
+        author="alice",
+        state="open",
+        created_at=_dt(0),
+        updated_at=_dt(1),
+        closed_at=None,
+        merged_at=None,
+        additions=1,
+        deletions=1,
+        changed_files=1,
+        review_comments=0,
+        comments=0,
+        commits=1,
+        reviewers=(),
+        url="https://example.com/1",
+        first_review_at=_dt(3),
+        first_reviewer="bob",
+    )
+
+    row = build_pr_rows([record])[0]
+
+    assert row["first_review_at"] == _dt(3).isoformat()
+    assert row["first_reviewer"] == "bob"
+    assert row["first_review_response_hours"] == 3.0
 
 
 def test_summarize_workflow_runs_groups_failures_and_success_rate():

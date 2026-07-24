@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from statistics import mean, median
@@ -24,6 +24,10 @@ class PullRequestMetricsSummary:
     avg_changed_files: float | None
     avg_comments: float | None
     top_authors: list[tuple[str, int]]
+    avg_first_review_hours: float | None = None
+    median_first_review_hours: float | None = None
+    unreviewed_prs: int = 0
+    top_first_reviewers: list[tuple[str, int]] = field(default_factory=list)
 
 
 class _IssueData(TypedDict):
@@ -66,6 +70,11 @@ def build_pr_rows(records: list[PullRequestRecord]) -> list[dict[str, object]]:
         merge_hours = None
         if record.merged_at:
             merge_hours = round((record.merged_at - record.created_at).total_seconds() / 3600, 2)
+        first_review_hours = None
+        if record.first_review_at:
+            first_review_hours = round(
+                (record.first_review_at - record.created_at).total_seconds() / 3600, 2
+            )
 
         rows.append(
             {
@@ -87,6 +96,11 @@ def build_pr_rows(records: list[PullRequestRecord]) -> list[dict[str, object]]:
                 "commits": record.commits,
                 "reviewer_count": len(record.reviewers),
                 "reviewers": ",".join(record.reviewers),
+                "first_review_at": (
+                    record.first_review_at.isoformat() if record.first_review_at else None
+                ),
+                "first_reviewer": record.first_reviewer,
+                "first_review_response_hours": first_review_hours,
                 "url": record.url,
             }
         )
@@ -103,12 +117,26 @@ def summarize_pull_requests(records: list[PullRequestRecord]) -> PullRequestMetr
     pr_sizes = [record.additions + record.deletions for record in records]
     changed_files = [record.changed_files for record in records]
     comments = [record.comments + record.review_comments for record in records]
+    first_review_hours = [
+        (record.first_review_at - record.created_at).total_seconds() / 3600
+        for record in records
+        if record.first_review_at is not None
+    ]
 
     author_counts: dict[str, int] = {}
     for record in records:
         author_counts[record.author] = author_counts.get(record.author, 0) + 1
 
     top_authors = sorted(author_counts.items(), key=lambda item: (-item[1], item[0].lower()))[:5]
+    first_reviewer_counts: dict[str, int] = {}
+    for record in records:
+        if record.first_reviewer:
+            first_reviewer_counts[record.first_reviewer] = (
+                first_reviewer_counts.get(record.first_reviewer, 0) + 1
+            )
+    top_first_reviewers = sorted(
+        first_reviewer_counts.items(), key=lambda item: (-item[1], item[0].lower())
+    )[:5]
 
     return PullRequestMetricsSummary(
         total_prs=len(records),
@@ -120,6 +148,10 @@ def summarize_pull_requests(records: list[PullRequestRecord]) -> PullRequestMetr
         avg_changed_files=_average_or_none(changed_files),
         avg_comments=_average_or_none(comments),
         top_authors=top_authors,
+        avg_first_review_hours=_average_or_none(first_review_hours),
+        median_first_review_hours=_median_or_none(first_review_hours),
+        unreviewed_prs=sum(1 for record in records if record.first_review_at is None),
+        top_first_reviewers=top_first_reviewers,
     )
 
 

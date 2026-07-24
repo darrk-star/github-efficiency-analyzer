@@ -31,6 +31,9 @@ def write_markdown_report(
         f"- Average PR size (lines changed): {_fmt(pr_summary.avg_pr_size)}",
         f"- Average changed files: {_fmt(pr_summary.avg_changed_files)}",
         f"- Average total comments: {_fmt(pr_summary.avg_comments)}",
+        f"- Average first review response (hours): {_fmt(pr_summary.avg_first_review_hours)}",
+        f"- Median first review response (hours): {_fmt(pr_summary.median_first_review_hours)}",
+        f"- PRs without external review: {pr_summary.unreviewed_prs}",
         "",
         "## CI Metrics",
         "",
@@ -50,6 +53,15 @@ def write_markdown_report(
         lines.extend(f"- {author}: {count} PRs" for author, count in pr_summary.top_authors)
     else:
         lines.append("- No pull requests found in the selected window.")
+
+    lines.extend(["", "## Top First Reviewers", ""])
+    if pr_summary.top_first_reviewers:
+        lines.extend(
+            f"- {reviewer}: {count} first reviews"
+            for reviewer, count in pr_summary.top_first_reviewers
+        )
+    else:
+        lines.append("- No qualifying external reviews found in the selected window.")
 
     lines.extend(["", "## CI Failure Categories", ""])
     if workflow_summary.failure_categories:
