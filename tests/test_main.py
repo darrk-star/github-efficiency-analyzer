@@ -6,7 +6,15 @@ from datetime import UTC, date, datetime
 import pytest
 
 from app.github_client import GitHubApiError
-from app.main import end_date, format_optional_number, parse_args, positive_int, repo_name, run
+from app.main import (
+    end_date,
+    format_optional_number,
+    parse_args,
+    positive_int,
+    repo_name,
+    run,
+    trend_windows,
+)
 from app.models import WorkflowRunRecord
 from app.snapshots import (
     FailureIssue,
@@ -42,6 +50,21 @@ def test_parse_args_accepts_snapshot_dir():
     args = parse_args(["--repo", "owner/repo", "--snapshot-dir", "tmp/snapshots"])
 
     assert args.snapshot_dir == "tmp/snapshots"
+
+
+@pytest.mark.parametrize("value", ["2", "8"])
+def test_trend_windows_accepts_supported_range(value):
+    assert trend_windows(value) == int(value)
+
+
+@pytest.mark.parametrize("value", ["1", "9", "abc"])
+def test_trend_windows_rejects_invalid_values(value):
+    with pytest.raises(argparse.ArgumentTypeError, match="between 2 and 8"):
+        trend_windows(value)
+
+
+def test_parse_args_defaults_to_four_trend_windows():
+    assert parse_args(["--repo", "owner/repo"]).trend_windows == 4
 
 
 def test_parse_args_accepts_fixed_end_date():

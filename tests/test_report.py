@@ -2,7 +2,7 @@ from datetime import date
 
 from app.metrics import PullRequestMetricsSummary, WeeklyCiDigest, WorkflowMetricsSummary
 from app.report import render_weekly_digest, write_markdown_report
-from app.trends import TrendComparison, TrendIssue
+from app.trends import RollingTrendComparison, RollingTrendIssue, TrendComparison, TrendIssue
 
 
 def sample_digest() -> WeeklyCiDigest:
@@ -51,6 +51,39 @@ def test_weekly_digest_renders_top_actionable_issue():
 
     assert "`regressed` suspected_flaky" in output
     assert "test_failure (4 occurrences) - pytest failed" in output
+
+
+def test_weekly_digest_renders_rolling_trends_and_history_collection():
+    rolling = RollingTrendComparison(
+        observed_windows=4,
+        issues=[
+            RollingTrendIssue(
+                fingerprint="fp",
+                category="test_failure",
+                window_counts=[1, 2, 4, 7],
+                workflows=["CI"],
+                example_detail="pytest failed",
+                observed_windows=4,
+                trend_direction="worsening",
+                confidence="high",
+                suspected_flaky=True,
+                transition_count=1,
+            )
+        ],
+    )
+
+    output = render_weekly_digest(
+        "owner/repo",
+        14,
+        sample_digest(),
+        TrendComparison(baseline_available=True, issues=[]),
+        rolling,
+    )
+
+    assert "## Rolling CI Trends" in output
+    assert "1 -> 2 -> 4 -> 7" in output
+    assert "data coverage confidence: high" in output
+    assert "suspected_flaky" in output
 
 
 def test_markdown_report_includes_analysis_end_date(tmp_path):

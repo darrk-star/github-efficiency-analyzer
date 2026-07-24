@@ -26,8 +26,14 @@ from app.metrics import (
     write_rows_to_csv,
 )
 from app.report import write_markdown_report, write_weekly_digest_report
-from app.snapshots import Snapshot, previous_snapshot_path, read_snapshot, write_snapshot
-from app.trends import compare_snapshots
+from app.snapshots import (
+    Snapshot,
+    load_recent_snapshots,
+    previous_snapshot_path,
+    read_snapshot,
+    write_snapshot,
+)
+from app.trends import build_rolling_trends, compare_snapshots
 
 
 def positive_int(value: str) -> int:
@@ -37,6 +43,16 @@ def positive_int(value: str) -> int:
         raise argparse.ArgumentTypeError("must be a positive integer") from exc
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def trend_windows(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be between 2 and 8") from exc
+    if not 2 <= parsed <= 8:
+        raise argparse.ArgumentTypeError("must be between 2 and 8")
     return parsed
 
 
@@ -100,6 +116,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--snapshot-dir",
         default="outputs/snapshots",
         help="Directory for compact CI trend snapshot files.",
+    )
+    parser.add_argument(
+        "--trend-windows",
+        type=trend_windows,
+        default=4,
+        help="Continuous CI snapshots used for rolling trends (2-8). Default: 4.",
     )
     args = parser.parse_args(argv)
     if not args.demo and args.repo is None:
@@ -169,6 +191,9 @@ def run(argv: list[str] | None = None) -> int:
         if previous_path.exists():
             previous = read_snapshot(previous_path)
         comparison = compare_snapshots(previous, current_snapshot)
+        rolling_comparison = build_rolling_trends(
+            load_recent_snapshots(snapshot_dir, current_snapshot, args.trend_windows)
+        )
         snapshot_path = write_snapshot(snapshot_dir, current_snapshot)
 
         output_dir = Path(args.output_dir)
@@ -191,7 +216,14 @@ def run(argv: list[str] | None = None) -> int:
             pr_summary,
             workflow_summary,
         )
-        write_weekly_digest_report(weekly_md_path, args.repo, args.days, weekly_digest, comparison)
+        write_weekly_digest_report(
+            weekly_md_path,
+            args.repo,
+            args.days,
+            weekly_digest,
+            comparison,
+            rolling_comparison,
+        )
         trend_chart_written = write_failure_trend_chart(daily_trend_frame, trend_chart_path)
         workflow_chart_written = write_failed_workflow_chart(
             failed_workflow_frame, workflow_chart_path
@@ -221,6 +253,7 @@ def run(argv: list[str] | None = None) -> int:
             weekly_digest,
             comparison,
             artifact_links,
+            rolling_comparison,
         )
 
         print(f"Repository: {args.repo}")

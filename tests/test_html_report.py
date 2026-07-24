@@ -9,7 +9,7 @@ from app.metrics import (
     WeeklyCiDigest,
     WorkflowMetricsSummary,
 )
-from app.trends import TrendComparison, TrendIssue
+from app.trends import RollingTrendComparison, RollingTrendIssue, TrendComparison, TrendIssue
 
 
 def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path):
@@ -82,6 +82,23 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
                 ),
             ],
         ),
+        rolling_comparison=RollingTrendComparison(
+            observed_windows=4,
+            issues=[
+                RollingTrendIssue(
+                    fingerprint="rolling",
+                    category="test_failure",
+                    window_counts=[1, 2, 4, 7],
+                    workflows=["CI"],
+                    example_detail="pytest failed",
+                    observed_windows=4,
+                    trend_direction="worsening",
+                    confidence="high",
+                    suspected_flaky=True,
+                    transition_count=1,
+                )
+            ],
+        ),
         artifact_links={
             "Pull request CSV": Path("pull_requests.csv"),
             "Workflow CSV": Path("workflow_runs.csv"),
@@ -99,6 +116,9 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
     assert "Pull Request Metrics" in html
     assert "Workflow success rate" in html
     assert "Recurring CI Issues" in html
+    assert "Rolling CI Trends" in html
+    assert "1 -&gt; 2 -&gt; 4 -&gt; 7" in html
+    assert "data coverage confidence: high" in html
     assert "Average first review response" in html
     assert "PRs without external review" in html
     assert "Top First Reviewers" in html

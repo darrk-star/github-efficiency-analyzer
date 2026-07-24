@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from app.metrics import PullRequestMetricsSummary, WeeklyCiDigest, WorkflowMetricsSummary
-from app.trends import TrendComparison
+from app.trends import RollingTrendComparison, TrendComparison
 
 
 def write_markdown_report(
@@ -89,6 +89,7 @@ def write_weekly_digest_report(
     days: int,
     digest: WeeklyCiDigest,
     comparison: TrendComparison | None = None,
+    rolling_comparison: RollingTrendComparison | None = None,
 ) -> None:
     lines = [
         f"# Weekly CI Digest: {repo}",
@@ -127,6 +128,8 @@ def write_weekly_digest_report(
 
     if comparison is not None:
         lines.extend(["", render_weekly_digest(repo, days, digest, comparison)])
+    if rolling_comparison is not None:
+        lines.extend(["", render_rolling_ci_trends(rolling_comparison)])
 
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -136,6 +139,7 @@ def render_weekly_digest(
     days: int,
     digest: WeeklyCiDigest,
     comparison: TrendComparison,
+    rolling_comparison: RollingTrendComparison | None = None,
 ) -> str:
     lines = ["## Recurring CI Issues", ""]
     if not comparison.baseline_available:
@@ -146,6 +150,8 @@ def render_weekly_digest(
             f"- `{issue.status}`{flaky}: {issue.category} "
             f"({issue.current_count} occurrences) - {issue.example_detail}"
         )
+    if rolling_comparison is not None:
+        lines.extend(["", render_rolling_ci_trends(rolling_comparison)])
     return "\n".join(lines)
 
 
@@ -153,6 +159,25 @@ def _top_actionable_issues(comparison: TrendComparison):
     active = [issue for issue in comparison.issues if issue.status != "resolved"]
     resolved = [issue for issue in comparison.issues if issue.status == "resolved"]
     return (active + resolved)[:3]
+
+
+def render_rolling_ci_trends(comparison: RollingTrendComparison) -> str:
+    lines = ["## Rolling CI Trends", ""]
+    if comparison.observed_windows < 2:
+        lines.append("- Rolling history is still being collected.")
+        return "\n".join(lines)
+    if not comparison.issues:
+        lines.append("- No CI failure trends were detected.")
+        return "\n".join(lines)
+    for issue in comparison.issues[:5]:
+        flaky = " suspected_flaky" if issue.suspected_flaky else ""
+        counts = " -> ".join(str(count) for count in issue.window_counts)
+        lines.append(
+            f"- `{issue.trend_direction}` ({counts}; "
+            f"data coverage confidence: {issue.confidence}{flaky}): "
+            f"{issue.category} - {issue.example_detail}"
+        )
+    return "\n".join(lines)
 
 
 def _fmt(value: float | None) -> str:
