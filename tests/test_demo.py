@@ -19,7 +19,7 @@ def test_demo_fixture_parses_into_records():
     assert isinstance(fixture.current_workflow_runs[0], WorkflowRunRecord)
 
 
-def test_run_demo_writes_reports_and_adjacent_snapshots(tmp_path):
+def test_run_demo_writes_reports_and_rolling_snapshots(tmp_path):
     output_dir = tmp_path / "outputs"
     snapshot_dir = tmp_path / "snapshots"
 
@@ -31,11 +31,15 @@ def test_run_demo_writes_reports_and_adjacent_snapshots(tmp_path):
     assert output_dir / "summary.md" in paths
     assert output_dir / "weekly_digest.md" in paths
     assert output_dir / "index.html" in paths
+    assert snapshot_dir / "acme__checkout-service__14__2026-06-08.json" in paths
+    assert snapshot_dir / "acme__checkout-service__14__2026-06-22.json" in paths
     assert snapshot_dir / "acme__checkout-service__14__2026-07-06.json" in paths
     assert snapshot_dir / "acme__checkout-service__14__2026-07-20.json" in paths
 
     weekly_digest = (output_dir / "weekly_digest.md").read_text(encoding="utf-8")
     assert "## Recurring CI Issues" in weekly_digest
+    assert "## Rolling CI Trends" in weekly_digest
+    assert "data coverage confidence: high" in weekly_digest
     assert "`regressed`" in weekly_digest
     assert "`persistent`" in weekly_digest
     assert "`new`" in weekly_digest
@@ -44,6 +48,7 @@ def test_run_demo_writes_reports_and_adjacent_snapshots(tmp_path):
     html_report = (output_dir / "index.html").read_text(encoding="utf-8")
     assert "acme/checkout-service" in html_report
     assert "Recurring CI Issues" in html_report
+    assert "Rolling CI Trends" in html_report
     assert "Average first review response" in html_report
 
     pr_csv = (output_dir / "pull_requests.csv").read_text(encoding="utf-8")
