@@ -4,7 +4,7 @@ import argparse
 import logging
 import os
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,8 +26,14 @@ from app.metrics import (
     write_rows_to_csv,
 )
 from app.report import write_markdown_report, write_weekly_digest_report
-from app.snapshots import Snapshot, previous_snapshot_path, read_snapshot, write_snapshot
-from app.trends import compare_snapshots
+from app.snapshots import (
+    Snapshot,
+    load_recent_snapshots,
+    previous_snapshot_path,
+    read_snapshot,
+    write_snapshot,
+)
+from app.trends import build_rolling_trends, compare_snapshots
 
 
 def positive_int(value: str) -> int:
@@ -40,12 +46,29 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def trend_windows(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be between 2 and 8") from exc
+    if not 2 <= parsed <= 8:
+        raise argparse.ArgumentTypeError("must be between 2 and 8")
+    return parsed
+
+
 def repo_name(value: str) -> str:
     try:
         GitHubClient._split_repo(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("must use owner/name form") from exc
     return value
+
+
+def end_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must use YYYY-MM-DD format") from exc
 
 
 def format_optional_number(value: float | None) -> str:
@@ -66,6 +89,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=positive_int,
         default=30,
         help="Number of days to look back from now. Default: 30.",
+    )
+    parser.add_argument(
+        "--end-date",
+        type=end_date,
+        help="UTC reporting end date in YYYY-MM-DD form.",
     )
     parser.add_argument(
         "--limit",
@@ -89,6 +117,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="outputs/snapshots",
         help="Directory for compact CI trend snapshot files.",
     )
+    parser.add_argument(
+        "--trend-windows",
+        type=trend_windows,
+        default=4,
+        help="Continuous CI snapshots used for rolling trends (2-8). Default: 4.",
+    )
     args = parser.parse_args(argv)
     if not args.demo and args.repo is None:
         parser.error("--repo is required unless --demo is used")
@@ -110,18 +144,21 @@ def run(argv: list[str] | None = None) -> int:
 
         config = AppConfig.from_env()
         client = GitHubClient(config)
-        created_after = datetime.now(tz=UTC) - timedelta(days=args.days)
+        analysis_end = _analysis_end_datetime(args.end_date)
+        created_after = analysis_end - timedelta(days=args.days)
 
         logging.info("Fetching pull requests for %s", args.repo)
         pr_records = client.fetch_pull_requests(
             repo=args.repo,
             created_after=created_after,
+            created_before=analysis_end if args.end_date else None,
             limit=args.limit,
         )
         logging.info("Fetching workflow runs for %s", args.repo)
         workflow_records = client.fetch_workflow_runs(
             repo=args.repo,
             created_after=created_after,
+            created_before=analysis_end if args.end_date else None,
             limit=args.limit,
         )
 
@@ -134,12 +171,11 @@ def run(argv: list[str] | None = None) -> int:
         weekly_digest = build_weekly_ci_digest(workflow_records)
         snapshot_dir = Path(args.snapshot_dir)
         issues, observations = build_failure_issues(workflow_records)
-        now = datetime.now(tz=UTC)
         current_snapshot = Snapshot(
             schema_version=1,
             repo=args.repo,
             window_days=args.days,
-            generated_at=now,
+            generated_at=analysis_end,
             total_runs=workflow_summary.total_runs,
             failed_runs=workflow_summary.failed_runs,
             issues=issues,
@@ -149,12 +185,15 @@ def run(argv: list[str] | None = None) -> int:
             snapshot_dir,
             repo=args.repo,
             window_days=args.days,
-            current_end_date=now.date().isoformat(),
+            current_end_date=analysis_end.date().isoformat(),
         )
         previous = None
         if previous_path.exists():
             previous = read_snapshot(previous_path)
         comparison = compare_snapshots(previous, current_snapshot)
+        rolling_comparison = build_rolling_trends(
+            load_recent_snapshots(snapshot_dir, current_snapshot, args.trend_windows)
+        )
         snapshot_path = write_snapshot(snapshot_dir, current_snapshot)
 
         output_dir = Path(args.output_dir)
@@ -169,8 +208,22 @@ def run(argv: list[str] | None = None) -> int:
 
         write_rows_to_csv(pr_csv_path, pr_rows)
         write_rows_to_csv(workflow_csv_path, workflow_rows)
-        write_markdown_report(md_path, args.repo, args.days, pr_summary, workflow_summary)
-        write_weekly_digest_report(weekly_md_path, args.repo, args.days, weekly_digest, comparison)
+        write_markdown_report(
+            md_path,
+            args.repo,
+            args.days,
+            analysis_end.date(),
+            pr_summary,
+            workflow_summary,
+        )
+        write_weekly_digest_report(
+            weekly_md_path,
+            args.repo,
+            args.days,
+            weekly_digest,
+            comparison,
+            rolling_comparison,
+        )
         trend_chart_written = write_failure_trend_chart(daily_trend_frame, trend_chart_path)
         workflow_chart_written = write_failed_workflow_chart(
             failed_workflow_frame, workflow_chart_path
@@ -194,11 +247,13 @@ def run(argv: list[str] | None = None) -> int:
             html_path,
             args.repo,
             args.days,
+            analysis_end.date(),
             pr_summary,
             workflow_summary,
             weekly_digest,
             comparison,
             artifact_links,
+            rolling_comparison,
         )
 
         print(f"Repository: {args.repo}")
@@ -233,6 +288,15 @@ def main() -> None:
 
 def _relative_to_output(path: Path, output_dir: Path) -> Path:
     return Path(os.path.relpath(path.resolve(), output_dir.resolve()))
+
+
+def _analysis_end_datetime(value: date | None) -> datetime:
+    current = datetime.now(tz=UTC)
+    if value is None:
+        return current
+    if value > current.date():
+        raise ValueError("Future analysis end dates are not supported.")
+    return datetime(value.year, value.month, value.day, tzinfo=UTC)
 
 
 if __name__ == "__main__":

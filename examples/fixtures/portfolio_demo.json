@@ -3,6 +3,48 @@
   "days": 14,
   "previous_generated_at": "2026-07-06T12:00:00+00:00",
   "current_generated_at": "2026-07-20T12:00:00+00:00",
+  "historical_workflow_windows": [
+    {
+      "generated_at": "2026-06-08T12:00:00+00:00",
+      "workflow_runs": [
+        {
+          "id": 8801, "name": "CI", "event": "pull_request", "status": "completed", "conclusion": "failure",
+          "created_at": "2026-06-07T10:00:00+00:00", "updated_at": "2026-06-07T10:15:00+00:00", "run_started_at": "2026-06-07T10:00:00+00:00",
+          "actor": "alice", "branch": "main", "duration_minutes": 15.0, "html_url": "https://example.com/runs/8801", "jobs_url": "https://example.com/runs/8801/jobs",
+          "failure_category": "test_failure", "failure_detail": "pytest failed in tests/test_checkout.py:12"
+        },
+        {
+          "id": 8802, "name": "Dependency Audit", "event": "push", "status": "completed", "conclusion": "failure",
+          "created_at": "2026-06-07T11:00:00+00:00", "updated_at": "2026-06-07T11:10:00+00:00", "run_started_at": "2026-06-07T11:00:00+00:00",
+          "actor": "carol", "branch": "main", "duration_minutes": 10.0, "html_url": "https://example.com/runs/8802", "jobs_url": "https://example.com/runs/8802/jobs",
+          "failure_category": "dependency_failure", "failure_detail": "pip could not find private-package==1.2.3"
+        },
+        {
+          "id": 8803, "name": "Build", "event": "push", "status": "completed", "conclusion": "failure",
+          "created_at": "2026-06-07T12:00:00+00:00", "updated_at": "2026-06-07T12:20:00+00:00", "run_started_at": "2026-06-07T12:00:00+00:00",
+          "actor": "erin", "branch": "main", "duration_minutes": 20.0, "html_url": "https://example.com/runs/8803", "jobs_url": "https://example.com/runs/8803/jobs",
+          "failure_category": "build_failure", "failure_detail": "npm build failed due to missing checkout asset"
+        }
+      ]
+    },
+    {
+      "generated_at": "2026-06-22T12:00:00+00:00",
+      "workflow_runs": [
+        {
+          "id": 8901, "name": "CI", "event": "pull_request", "status": "completed", "conclusion": "success",
+          "created_at": "2026-06-21T10:00:00+00:00", "updated_at": "2026-06-21T10:12:00+00:00", "run_started_at": "2026-06-21T10:00:00+00:00",
+          "actor": "alice", "branch": "main", "duration_minutes": 12.0, "html_url": "https://example.com/runs/8901", "jobs_url": "https://example.com/runs/8901/jobs",
+          "failure_category": "passed", "failure_detail": null
+        },
+        {
+          "id": 8902, "name": "Dependency Audit", "event": "push", "status": "completed", "conclusion": "failure",
+          "created_at": "2026-06-21T11:00:00+00:00", "updated_at": "2026-06-21T11:08:00+00:00", "run_started_at": "2026-06-21T11:00:00+00:00",
+          "actor": "carol", "branch": "main", "duration_minutes": 8.0, "html_url": "https://example.com/runs/8902", "jobs_url": "https://example.com/runs/8902/jobs",
+          "failure_category": "dependency_failure", "failure_detail": "pip could not find private-package==1.2.3"
+        }
+      ]
+    }
+  ],
   "pull_requests": [
     {
       "number": 101,
@@ -20,6 +62,8 @@
       "comments": 3,
       "commits": 4,
       "reviewers": ["bob"],
+      "first_review_at": "2026-07-10T10:30:00+00:00",
+      "first_reviewer": "bob",
       "url": "https://example.com/acme/checkout-service/pull/101"
     },
     {
@@ -38,6 +82,8 @@
       "comments": 2,
       "commits": 2,
       "reviewers": ["dave", "erin"],
+      "first_review_at": "2026-07-16T14:00:00+00:00",
+      "first_reviewer": "dave",
       "url": "https://example.com/acme/checkout-service/pull/102"
     }
   ],

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from tkinter import TclError
 from typing import Any
 
 from app.charts import write_failed_workflow_chart, write_failure_trend_chart
@@ -25,7 +26,7 @@ from app.metrics import (
 from app.models import PullRequestRecord, WorkflowRunRecord
 from app.report import write_markdown_report, write_weekly_digest_report
 from app.snapshots import Snapshot, write_snapshot
-from app.trends import compare_snapshots
+from app.trends import build_rolling_trends, compare_snapshots
 
 DEFAULT_FIXTURE_PATH = Path("examples/fixtures/portfolio_demo.json")
 LOGGER = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class DemoFixture:
     days: int
     previous_generated_at: datetime
     current_generated_at: datetime
+    historical_workflow_windows: list[tuple[datetime, list[WorkflowRunRecord]]]
     pull_requests: list[PullRequestRecord]
     previous_workflow_runs: list[WorkflowRunRecord]
     current_workflow_runs: list[WorkflowRunRecord]
@@ -49,6 +51,13 @@ def load_demo_fixture(path: Path = DEFAULT_FIXTURE_PATH) -> DemoFixture:
         days=int(payload["days"]),
         previous_generated_at=_parse_datetime(str(payload["previous_generated_at"])),
         current_generated_at=_parse_datetime(str(payload["current_generated_at"])),
+        historical_workflow_windows=[
+            (
+                _parse_datetime(str(window["generated_at"])),
+                [_parse_workflow_run(item) for item in window["workflow_runs"]],
+            )
+            for window in payload["historical_workflow_windows"]
+        ],
         pull_requests=[_parse_pull_request(item) for item in payload["pull_requests"]],
         previous_workflow_runs=[
             _parse_workflow_run(item) for item in payload["previous_workflow_runs"]
@@ -75,7 +84,13 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
         fixture.current_generated_at,
         fixture.current_workflow_runs,
     )
+    older_snapshots = [
+        _build_snapshot(fixture.repo, fixture.days, generated_at, records)
+        for generated_at, records in fixture.historical_workflow_windows
+    ]
+    rolling_snapshots = [*older_snapshots, previous_snapshot, current_snapshot]
     comparison = compare_snapshots(previous_snapshot, current_snapshot)
+    rolling_comparison = build_rolling_trends(rolling_snapshots)
 
     pr_summary = summarize_pull_requests(fixture.pull_requests)
     workflow_summary = summarize_workflow_runs(fixture.current_workflow_runs)
@@ -93,12 +108,27 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     trend_chart_path = output_dir / "ci_failure_trend.png"
     workflow_chart_path = output_dir / "unstable_workflows.png"
 
-    previous_snapshot_path = write_snapshot(snapshot_dir, previous_snapshot)
-    current_snapshot_path = write_snapshot(snapshot_dir, current_snapshot)
+    snapshot_paths = [write_snapshot(snapshot_dir, snapshot) for snapshot in rolling_snapshots]
+    previous_snapshot_path = snapshot_paths[-2]
+    current_snapshot_path = snapshot_paths[-1]
     write_rows_to_csv(pr_csv_path, pr_rows)
     write_rows_to_csv(workflow_csv_path, workflow_rows)
-    write_markdown_report(summary_path, fixture.repo, fixture.days, pr_summary, workflow_summary)
-    write_weekly_digest_report(weekly_path, fixture.repo, fixture.days, weekly_digest, comparison)
+    write_markdown_report(
+        summary_path,
+        fixture.repo,
+        fixture.days,
+        fixture.current_generated_at.date(),
+        pr_summary,
+        workflow_summary,
+    )
+    write_weekly_digest_report(
+        weekly_path,
+        fixture.repo,
+        fixture.days,
+        weekly_digest,
+        comparison,
+        rolling_comparison,
+    )
     chart_paths: list[Path] = []
     chart_jobs: list[tuple[Callable[[Any, Path], bool], Any, Path]] = [
         (write_failure_trend_chart, daily_trend_frame, trend_chart_path),
@@ -107,7 +137,7 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
     for chart_fn, chart_data, chart_path in chart_jobs:
         try:
             chart_written = chart_fn(chart_data, chart_path)
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError, TclError) as exc:
             LOGGER.debug("Skipping optional demo chart %s: %s", chart_path, exc)
             chart_written = False
         if chart_written:
@@ -131,11 +161,13 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
         html_path,
         fixture.repo,
         fixture.days,
+        fixture.current_generated_at.date(),
         pr_summary,
         workflow_summary,
         weekly_digest,
         comparison,
         artifact_links,
+        rolling_comparison,
     )
 
     written_paths = [
@@ -144,8 +176,7 @@ def run_demo(output_dir: Path, snapshot_dir: Path) -> tuple[str, list[Path]]:
         summary_path,
         weekly_path,
         html_path,
-        previous_snapshot_path,
-        current_snapshot_path,
+        *snapshot_paths,
         *chart_paths,
     ]
     return fixture.repo, written_paths
@@ -189,6 +220,8 @@ def _parse_pull_request(item: dict[str, Any]) -> PullRequestRecord:
         commits=int(item["commits"]),
         reviewers=tuple(str(value) for value in item["reviewers"]),
         url=str(item["url"]),
+        first_review_at=_parse_optional_datetime(item.get("first_review_at")),
+        first_reviewer=(str(item["first_reviewer"]) if item.get("first_reviewer") else None),
     )
 
 

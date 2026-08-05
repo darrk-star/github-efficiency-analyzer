@@ -5,7 +5,7 @@
 [![CI](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/ci.yml)
 [![Deploy portfolio report to Pages](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/pages.yml/badge.svg)](https://github.com/darrk-star/github-efficiency-analyzer/actions/workflows/pages.yml)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-68%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-deterministic-2ea44f)
 
 [Live report](https://darrk-star.github.io/github-efficiency-analyzer/) | [Offline demo](#offline-portfolio-demo) | [Run tests](#quality-checks)
 
@@ -13,16 +13,16 @@
 
 ## Portfolio Summary
 
-This project turns GitHub Pull Request and Actions activity into an explainable engineering-efficiency report. It uses a resilient Python REST client, deterministic CI failure diagnosis, stable fingerprints, and adjacent-window snapshots to produce HTML, Markdown, CSV, PNG, and JSON artifacts. The complete workflow is covered by automated tests and a GitHub Pages deployment, while the offline fixture makes the project reviewable without a token or network access.
+This project turns GitHub Pull Request and Actions activity into an explainable engineering-efficiency report. It uses a resilient Python REST client, deterministic CI failure diagnosis, stable fingerprints, and continuous multi-window snapshots to produce HTML, Markdown, CSV, PNG, and JSON artifacts. The complete workflow is covered by automated tests and a GitHub Pages deployment, while the offline fixture makes the project reviewable without a token or network access.
 
 ### Resume-ready description
 
-> Built a Python GitHub engineering-efficiency analyzer that collects Pull Request and Actions data through paginated, retry-aware REST calls; classifies CI failures with evidence-backed rules and stable SHA-256 fingerprints; compares adjacent snapshots to identify new, persistent, regressed, resolved, and suspected-flaky issues; and publishes reproducible HTML/Markdown/CSV/PNG/JSON reports through GitHub Actions and GitHub Pages. Added 68 deterministic tests covering API pagination, retries, metrics, snapshots, trend detection, offline demo generation, and report rendering.
+> Built a Python GitHub engineering-efficiency analyzer that collects Pull Request and Actions data through paginated, retry-aware REST calls; classifies CI failures with evidence-backed rules and stable SHA-256 fingerprints; compares adjacent snapshots and continuous rolling windows to identify lifecycle changes, improving/worsening trends, coverage confidence, and suspected-flaky issues; and publishes reproducible HTML/Markdown/CSV/PNG/JSON reports through GitHub Actions and GitHub Pages.
 
 ### 中文简历描述
 
 - 基于 Python 与 GitHub REST API 开发工程效率分析工具，通过分页采集、指数退避重试、限流识别和类型化数据转换，统计 Pull Request 交付效率与 GitHub Actions 稳定性指标。
-- 设计可解释的 CI 故障分析链路，结合日志证据、规则分类、噪声归一化 SHA-256 指纹和相邻窗口快照，识别新增、持续、恶化、已解决及疑似 flaky 故障。
+- 设计可解释的 CI 故障分析链路，结合日志证据、规则分类、噪声归一化 SHA-256 指纹和连续滚动窗口快照，识别新增、持续、恶化、已解决、改善趋势及疑似 flaky 故障。
 - 构建 CLI、离线 Demo、静态 HTML/Markdown/CSV/PNG/JSON 报告及 GitHub Pages 自动部署流程，并通过 68 个确定性测试、Ruff、mypy 和双 Python 版本 CI 保证交付质量。
 
 ### 30-second offline demo
@@ -32,7 +32,7 @@ No GitHub token or network access is required for the portfolio walkthrough:
 1. Run `python -m app.main --demo --output-dir outputs/demo --snapshot-dir outputs/demo/snapshots`.
 2. Open `outputs/demo/index.html` first; it is the primary visual artifact.
 3. Read `outputs/demo/weekly_digest.md` to see the explainable risk summary and recommended actions.
-4. Compare the two JSON files under `outputs/demo/snapshots/` to inspect the trend input directly.
+4. Compare the four JSON files under `outputs/demo/snapshots/` to inspect the rolling-trend input directly.
 
 The live report is generated from a historical fixture and is suitable for browsing. A live repository analysis still requires a valid GitHub token and repository access.
 
@@ -74,8 +74,8 @@ GitHub REST API
 | `app/models.py` | Immutable domain records and shared workflow outcome semantics |
 | `app/ci_failure_analysis.py` | Explainable rule-based log classification and evidence extraction |
 | `app/failure_fingerprint.py` | Stable SHA-256 fingerprints from noise-normalized CI failure details |
-| `app/snapshots.py` | Compact JSON snapshot persistence for week-over-week comparison |
-| `app/trends.py` | Pure snapshot comparison: lifecycle statuses and suspected flaky detection |
+| `app/snapshots.py` | Compact JSON snapshots and continuous-history discovery |
+| `app/trends.py` | Pure adjacent and rolling comparison with coverage confidence |
 | `app/metrics.py` | Pure PR/CI aggregation, trends, weekly digest, snapshot issues, and CSV rows |
 | `app/report.py` | Markdown report rendering |
 | `app/charts.py` | Optional PNG charts from already-computed rows |
@@ -91,7 +91,7 @@ Workflow runs are returned newest first by creation time, so workflow collection
 
 ### Fewer expensive requests
 
-Successful, neutral, skipped, and cancelled workflow runs do not need diagnostic logs. Jobs and log archives are fetched only for unsuccessful runs that need classification. This keeps the normal path cheaper and makes the trade-off visible in tests.
+Successful, neutral, skipped, and cancelled workflow runs do not need diagnostic logs. Jobs and log archives are fetched only for unsuccessful runs that need classification. Review events are fetched only for PRs already selected by `--limit`. This keeps API cost bounded and makes the trade-off visible in tests.
 
 ### Explicit outcome semantics
 
@@ -122,6 +122,12 @@ Each fingerprint has the stable identifier format `ci-failure-<12 hex chars>` an
 
 The latest snapshot uses a filename derived from `repo__days__end-date.json`. The adjacent equal-window snapshot is located by subtracting `days` from the current end date. Re-running on the same date never treats the just-written snapshot as the previous period, and a missing baseline is a normal first-run condition, not an error.
 
+### Rolling CI trends
+
+`--trend-windows` controls how many continuous snapshots are used for the rolling view (default `4`, supported range `2` to `8`). The analyzer searches backward only for exactly adjacent, schema-compatible snapshots with the same repository and window length; it stops at the first gap, malformed file, or incompatible snapshot rather than stitching unrelated periods together.
+
+A missing fingerprint contributes `0` in that window. The oldest and newest counts determine `improving`, `stable`, or `worsening`; one snapshot reports `insufficient_data`. Data coverage confidence is `low` for one window, `medium` for two or three, and `high` for four or more. It describes continuous data availability, not statistical confidence.
+
 ### Lifecycle statuses
 
 A pure comparison of two adjacent snapshots yields one of four statuses for each recurring fingerprint:
@@ -146,9 +152,14 @@ A fingerprint is marked `suspected_flaky` when the same workflow contains a `fai
 - Average PR size: additions plus deletions
 - Average changed files
 - Average comment volume: issue comments plus review comments
+- Average and median first external review response time
+- Pull requests without an external review and top first reviewers
 - Top authors by PR count
 
-The PR time window is based on PR creation time. Requested reviewers are exported for context, but they are not presented as historical reviewer participation because the GitHub field does not reliably represent completed reviews.
+The PR time window is based on PR creation time. First review response uses the earliest
+external `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED` event submitted after PR creation;
+author self-reviews, `PENDING`, and `DISMISSED` events are excluded. Requested reviewers are
+still exported only as current-request context, not historical participation.
 
 ### GitHub Actions
 
@@ -200,13 +211,28 @@ Run an analysis:
 python -m app.main --repo microsoft/vscode --days 14 --limit 20
 ```
 
+Reproduce a fixed UTC reporting window when reviewing a historical period or comparing
+adjacent snapshots:
+
+```powershell
+python -m app.main --repo microsoft/vscode --days 14 --end-date 2026-07-20
+```
+
+`--end-date` is an exclusive midnight-UTC boundary. With `--days 14`, this command
+analyzes records created from `2026-07-06T00:00:00Z` up to, but not including,
+`2026-07-20T00:00:00Z`. It produces a stable snapshot filename and resolves the same
+adjacent-window baseline when rerun.
+
 Use a custom snapshot directory when demonstrating failure trends:
 
 ```powershell
-python -m app.main --repo microsoft/vscode --days 14 --limit 20 --snapshot-dir outputs/snapshots
+python -m app.main --repo microsoft/vscode --days 14 --limit 20 --snapshot-dir outputs/snapshots --trend-windows 4
 ```
 
-The CLI validates `owner/name`, positive `--days`, and positive `--limit` before making network calls. GitHub authentication, not-found, rate-limit, timeout, and retry exhaustion errors return a non-zero exit code with an actionable message.
+The CLI validates `owner/name`, positive `--days`, positive `--limit`, and non-future
+`--end-date` values before making network calls. GitHub authentication, not-found,
+rate-limit, timeout, and retry exhaustion errors return a non-zero exit code with an
+actionable message.
 
 ## Offline Portfolio Demo
 
@@ -234,7 +260,7 @@ python -m ruff format --check .
 python -m mypy app
 ```
 
-The current branch has 68 passing tests covering the core analyzer, failure trends, offline demo, HTML reporting, and deployment workflow contract.
+The test suite covers the core analyzer, continuous snapshot discovery, rolling trends, offline demo, HTML reporting, and deployment workflow contract.
 
 HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
 
@@ -278,15 +304,16 @@ This project intentionally does not include a web dashboard, database, scheduled
 v2 addresses the v1 gap where a single pass over CI runs could not distinguish recurring failures from isolated ones. Current limitations:
 
 - `suspected_flaky` is a heuristic using a single fail-success-fail pattern and does not track actual GitHub re-run or workflow dispatch events.
-- Snapshot comparison works between two adjacent equal-window snapshots, not a rolling multi-window view.
+- Rolling history must be accumulated through repeated analyses; a gap or incompatible historical snapshot intentionally reduces coverage instead of being inferred.
+- Data coverage confidence is a heuristic for continuous local history, not a statistical confidence interval or forecast.
 - Full logs are never persisted with the snapshot; only the compact fingerprint, categorization, and occurrence count are saved.
 - The CLI does not expose a standalone dashboard or notification system for regressions.
 
 Useful next steps would be:
 
-1. Add multi-window rolling detection and confidence scoring.
-2. Add workflow ownership and notification integrations.
-3. Add review-event metrics after introducing the required API collection.
+1. Add workflow ownership and notification integrations.
+2. Add organization-level aggregation and scheduled reporting.
+3. Add reviewer ownership analysis beyond first-response metrics.
 
 ## Interview Talking Points
 
@@ -304,7 +331,8 @@ Useful next steps would be:
 - I built a deterministic failure fingerprint system that normalizes timestamps, UUIDs, absolute paths, line numbers, and large numeric IDs before SHA-256 hashing, so repeated incidents with different volatile tokens produce the same fingerprint.
 - I designed a compact JSON snapshot schema with no full log persistence and an adjacent-window path resolution algorithm that prevents a just-written snapshot from being treated as its own baseline.
 - I implemented a pure snapshot comparison that classifies recurring fingerprints as `new`, `persistent`, `regressed`, or `resolved`, and flags suspected flaky via fail-success-fail subsequence detection across combined observations.
-- I integrated the full snapshot-trend lifecycle into the existing CLI with a single `--snapshot-dir` option, keeping existing CSV, PNG, and Markdown outputs compatible.
+- I integrated the full snapshot-trend lifecycle into the existing CLI with `--snapshot-dir` and `--trend-windows`, keeping existing CSV, PNG, and Markdown outputs compatible.
+- I extended the local snapshot model into a conservative rolling trend view: it stops at data gaps, zero-fills absent fingerprints, and labels confidence as data coverage rather than statistical certainty.
 
 ## Project Structure
 

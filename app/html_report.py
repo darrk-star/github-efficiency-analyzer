@@ -1,32 +1,37 @@
 from __future__ import annotations
 
+from datetime import date
 from html import escape
 from pathlib import Path
 
 from app.metrics import PullRequestMetricsSummary, WeeklyCiDigest, WorkflowMetricsSummary
-from app.trends import TrendComparison
+from app.trends import RollingTrendComparison, TrendComparison
 
 
 def write_html_report(
     output_path: Path,
     repo: str,
     days: int,
+    analysis_end_date: date,
     pr_summary: PullRequestMetricsSummary,
     workflow_summary: WorkflowMetricsSummary,
     digest: WeeklyCiDigest,
     comparison: TrendComparison,
     artifact_links: dict[str, Path],
+    rolling_comparison: RollingTrendComparison | None = None,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         render_html_report(
             repo=repo,
             days=days,
+            analysis_end_date=analysis_end_date,
             pr_summary=pr_summary,
             workflow_summary=workflow_summary,
             digest=digest,
             comparison=comparison,
             artifact_links=artifact_links,
+            rolling_comparison=rolling_comparison,
         ),
         encoding="utf-8",
     )
@@ -35,11 +40,13 @@ def write_html_report(
 def render_html_report(
     repo: str,
     days: int,
+    analysis_end_date: date,
     pr_summary: PullRequestMetricsSummary,
     workflow_summary: WorkflowMetricsSummary,
     digest: WeeklyCiDigest,
     comparison: TrendComparison,
     artifact_links: dict[str, Path],
+    rolling_comparison: RollingTrendComparison | None = None,
 ) -> str:
     chart_items = {
         label: path
@@ -65,11 +72,13 @@ def render_html_report(
                 f"      <p>Last {days} days of pull request throughput, CI "
                 "stability, recurring failures, and generated artifacts.</p>"
             ),
+            f"      <p>Reporting window ends {escape(analysis_end_date.isoformat())} UTC.</p>",
             "    </section>",
             _pull_request_section(pr_summary),
             _workflow_section(workflow_summary),
             _digest_section(digest),
             _recurring_issue_section(comparison),
+            _rolling_trend_section(rolling_comparison),
             _charts_section(chart_items),
             _artifact_section(artifact_links),
             "  </main>",
@@ -90,10 +99,19 @@ def _pull_request_section(pr_summary: PullRequestMetricsSummary) -> str:
         ("Average PR size", _fmt_number(pr_summary.avg_pr_size)),
         ("Average changed files", _fmt_number(pr_summary.avg_changed_files)),
         ("Average comments", _fmt_number(pr_summary.avg_comments)),
+        ("Average first review response", _fmt_hours(pr_summary.avg_first_review_hours)),
+        ("Median first review response", _fmt_hours(pr_summary.median_first_review_hours)),
+        ("PRs without external review", pr_summary.unreviewed_prs),
     ]
     body = '<div class="cards">' + "".join(_card(label, value) for label, value in cards) + "</div>"
     body += "<h3>Top Authors</h3>"
     body += _pair_list(pr_summary.top_authors, "PRs", "No pull requests found.")
+    body += "<h3>Top First Reviewers</h3>"
+    body += _pair_list(
+        pr_summary.top_first_reviewers,
+        "first reviews",
+        "No qualifying external reviews found.",
+    )
     return _section("Pull Request Metrics", body)
 
 
@@ -175,6 +193,39 @@ def _recurring_issue_section(comparison: TrendComparison) -> str:
             )
         body += "</div>"
     return _section("Recurring CI Issues", body)
+
+
+def _rolling_trend_section(comparison: RollingTrendComparison | None) -> str:
+    if comparison is None:
+        return ""
+    if comparison.observed_windows < 2:
+        return _section(
+            "Rolling CI Trends",
+            '<p class="muted">Rolling history is still being collected.</p>',
+        )
+    if not comparison.issues:
+        return _section(
+            "Rolling CI Trends",
+            '<p class="muted">No CI failure trends were detected.</p>',
+        )
+
+    body = '<div class="issues">'
+    for issue in comparison.issues[:5]:
+        flaky = '<span class="badge flaky">suspected flaky</span>' if issue.suspected_flaky else ""
+        counts = " -> ".join(str(count) for count in issue.window_counts)
+        workflows = ", ".join(issue.workflows) if issue.workflows else "N/A"
+        body += (
+            '<article class="issue">'
+            f'<div><span class="badge">{escape(issue.trend_direction)}</span>{flaky}</div>'
+            f"<h3>{escape(issue.category)}</h3>"
+            f"<p>{escape(issue.example_detail)}</p>"
+            "<small>"
+            f"{escape(counts)} | data coverage confidence: {escape(issue.confidence)} | "
+            f"workflow: {escape(workflows)} | {escape(issue.fingerprint)}"
+            "</small>"
+            "</article>"
+        )
+    return _section("Rolling CI Trends", body + "</div>")
 
 
 def _charts_section(chart_items: dict[str, Path]) -> str:

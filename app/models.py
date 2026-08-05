@@ -36,6 +36,8 @@ class PullRequestRecord:
     commits: int
     reviewers: tuple[str, ...]
     url: str
+    first_review_at: datetime | None = None
+    first_reviewer: str | None = None
 
     @property
     def is_merged(self) -> bool:

@@ -37,6 +37,7 @@ class GitHubClient:
         self,
         repo: str,
         created_after: datetime,
+        created_before: datetime | None = None,
         state: str = "all",
         limit: int = 100,
     ) -> list[PullRequestRecord]:
@@ -62,7 +63,9 @@ class GitHubClient:
 
             for item in page_items:
                 created_at = self._parse_dt(item["created_at"])
-                if created_at >= created_after:
+                if created_at >= created_after and (
+                    created_before is None or created_at < created_before
+                ):
                     pr_summaries.append(item)
                 if len(pr_summaries) >= limit:
                     break
@@ -75,6 +78,7 @@ class GitHubClient:
         self,
         repo: str,
         created_after: datetime,
+        created_before: datetime | None = None,
         limit: int = 100,
     ) -> list[WorkflowRunRecord]:
         owner, name = self._split_repo(repo)
@@ -99,6 +103,8 @@ class GitHubClient:
                 created_at = self._parse_dt(run["created_at"])
                 if created_at < created_after:
                     return records
+                if created_before is not None and created_at >= created_before:
+                    continue
 
                 conclusion = (run.get("conclusion") or "").lower()
                 jobs: list[dict[str, Any]] = []
@@ -166,13 +172,19 @@ class GitHubClient:
             reviewer_names = tuple(
                 sorted({reviewer["login"] for reviewer in payload.get("requested_reviewers", [])})
             )
+            created_at = self._parse_dt(payload["created_at"])
+            first_review_at, first_reviewer = self._first_external_review(
+                self._fetch_pull_request_reviews(owner, name, number),
+                author=str(payload["user"]["login"]),
+                created_at=created_at,
+            )
             records.append(
                 PullRequestRecord(
                     number=payload["number"],
                     title=payload["title"],
                     author=payload["user"]["login"],
                     state=payload["state"],
-                    created_at=self._parse_dt(payload["created_at"]),
+                    created_at=created_at,
                     updated_at=self._parse_dt(payload["updated_at"]),
                     closed_at=self._parse_optional_dt(payload.get("closed_at")),
                     merged_at=self._parse_optional_dt(payload.get("merged_at")),
@@ -184,9 +196,54 @@ class GitHubClient:
                     commits=payload["commits"],
                     reviewers=reviewer_names,
                     url=payload["html_url"],
+                    first_review_at=first_review_at,
+                    first_reviewer=first_reviewer,
                 )
             )
         return records
+
+    def _fetch_pull_request_reviews(
+        self, owner: str, name: str, number: int
+    ) -> list[dict[str, Any]]:
+        page = 1
+        reviews: list[dict[str, Any]] = []
+        while True:
+            response = self._get(
+                f"{self._base_url}/repos/{owner}/{name}/pulls/{number}/reviews",
+                params={"per_page": 100, "page": page},
+                timeout=30,
+            )
+            page_items = response.json()
+            if not page_items:
+                return reviews
+            reviews.extend(page_items)
+            page += 1
+
+    @classmethod
+    def _first_external_review(
+        cls,
+        reviews: list[dict[str, Any]],
+        author: str,
+        created_at: datetime,
+    ) -> tuple[datetime | None, str | None]:
+        candidates: list[tuple[datetime, str]] = []
+        for review in reviews:
+            reviewer = review.get("user", {}).get("login")
+            submitted_at = review.get("submitted_at")
+            state = str(review.get("state", "")).upper()
+            if (
+                not reviewer
+                or reviewer == author
+                or state not in {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
+                or not submitted_at
+            ):
+                continue
+            submitted = cls._parse_dt(str(submitted_at))
+            if submitted >= created_at:
+                candidates.append((submitted, str(reviewer)))
+        if not candidates:
+            return None, None
+        return min(candidates, key=lambda item: (item[0], item[1]))
 
     def _fetch_run_jobs(self, owner: str, name: str, run_id: int) -> list[dict[str, Any]]:
         response = self._get(

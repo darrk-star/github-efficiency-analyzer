@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from app.html_report import write_html_report
@@ -8,7 +9,7 @@ from app.metrics import (
     WeeklyCiDigest,
     WorkflowMetricsSummary,
 )
-from app.trends import TrendComparison, TrendIssue
+from app.trends import RollingTrendComparison, RollingTrendIssue, TrendComparison, TrendIssue
 
 
 def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path):
@@ -18,6 +19,7 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
         output_path=output_path,
         repo="owner/repo",
         days=14,
+        analysis_end_date=date(2026, 7, 20),
         pr_summary=PullRequestMetricsSummary(
             total_prs=8,
             merged_prs=5,
@@ -28,6 +30,10 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
             avg_changed_files=4.5,
             avg_comments=2.0,
             top_authors=[("alice", 5), ("bob", 3)],
+            avg_first_review_hours=3.5,
+            median_first_review_hours=3.0,
+            unreviewed_prs=1,
+            top_first_reviewers=[("bob", 2)],
         ),
         workflow_summary=WorkflowMetricsSummary(
             total_runs=20,
@@ -76,6 +82,23 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
                 ),
             ],
         ),
+        rolling_comparison=RollingTrendComparison(
+            observed_windows=4,
+            issues=[
+                RollingTrendIssue(
+                    fingerprint="rolling",
+                    category="test_failure",
+                    window_counts=[1, 2, 4, 7],
+                    workflows=["CI"],
+                    example_detail="pytest failed",
+                    observed_windows=4,
+                    trend_direction="worsening",
+                    confidence="high",
+                    suspected_flaky=True,
+                    transition_count=1,
+                )
+            ],
+        ),
         artifact_links={
             "Pull request CSV": Path("pull_requests.csv"),
             "Workflow CSV": Path("workflow_runs.csv"),
@@ -89,9 +112,16 @@ def test_write_html_report_renders_metrics_statuses_and_artifact_links(tmp_path)
     html = output_path.read_text(encoding="utf-8")
     assert "<!doctype html>" in html
     assert "owner/repo" in html
+    assert "Reporting window ends 2026-07-20 UTC" in html
     assert "Pull Request Metrics" in html
     assert "Workflow success rate" in html
     assert "Recurring CI Issues" in html
+    assert "Rolling CI Trends" in html
+    assert "1 -&gt; 2 -&gt; 4 -&gt; 7" in html
+    assert "data coverage confidence: high" in html
+    assert "Average first review response" in html
+    assert "PRs without external review" in html
+    assert "Top First Reviewers" in html
     assert "regressed" in html
     assert "suspected flaky" in html
     assert "resolved" in html
@@ -107,6 +137,7 @@ def test_write_html_report_handles_missing_baseline_and_optional_artifacts(tmp_p
         output_path=output_path,
         repo="owner/repo",
         days=7,
+        analysis_end_date=date(2026, 7, 20),
         pr_summary=PullRequestMetricsSummary(
             total_prs=0,
             merged_prs=0,
