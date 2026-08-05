@@ -15,15 +15,13 @@
 
 This project turns GitHub Pull Request and Actions activity into an explainable engineering-efficiency report. It uses a resilient Python REST client, deterministic CI failure diagnosis, stable fingerprints, and continuous multi-window snapshots to produce HTML, Markdown, CSV, PNG, and JSON artifacts. The complete workflow is covered by automated tests and a GitHub Pages deployment, while the offline fixture makes the project reviewable without a token or network access.
 
-### Resume-ready description
+### Project Highlights
 
-> Built a Python GitHub engineering-efficiency analyzer that collects Pull Request and Actions data through paginated, retry-aware REST calls; classifies CI failures with evidence-backed rules and stable SHA-256 fingerprints; compares adjacent snapshots and continuous rolling windows to identify lifecycle changes, improving/worsening trends, coverage confidence, and suspected-flaky issues; and publishes reproducible HTML/Markdown/CSV/PNG/JSON reports through GitHub Actions and GitHub Pages.
-
-### 中文简历描述
-
-- 基于 Python 与 GitHub REST API 开发工程效率分析工具，通过分页采集、指数退避重试、限流识别和类型化数据转换，统计 Pull Request 交付效率与 GitHub Actions 稳定性指标。
-- 设计可解释的 CI 故障分析链路，结合日志证据、规则分类、噪声归一化 SHA-256 指纹和连续滚动窗口快照，识别新增、持续、恶化、已解决、改善趋势及疑似 flaky 故障。
-- 构建 CLI、离线 Demo、静态 HTML/Markdown/CSV/PNG/JSON 报告及 GitHub Pages 自动部署流程，并通过 68 个确定性测试、Ruff、mypy 和双 Python 版本 CI 保证交付质量。
+- Resilient GitHub REST API collection with pagination, bounded retries, rate-limit handling, and typed payload translation.
+- Explainable CI diagnosis using normalized evidence and stable SHA-256 failure fingerprints.
+- Reproducible adjacent and rolling-window reports with improving, stable, worsening, and suspected-flaky signals.
+- Offline demo and GitHub Pages deployment for review without a token or network access.
+- Quality gates covering 95 deterministic tests, Ruff, mypy, and Python 3.11/3.12 CI.
 
 ### 30-second offline demo
 
