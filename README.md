@@ -262,7 +262,7 @@ The test suite covers the core analyzer, continuous snapshot discovery, rolling 
 
 HTTP tests use deterministic fake sessions and multi-page fixtures. They do not depend on a live GitHub repository or token.
 
-Ruff and mypy configuration is committed and runs in GitHub Actions. In the development environment used for this iteration, package installation for those tools was blocked by the machine's pip/index configuration, so their first authoritative run is expected to come from GitHub Actions.
+Ruff and mypy configuration is committed and runs locally and in GitHub Actions. The CI workflow validates both Python 3.11 and 3.12 alongside the deterministic test suite.
 
 ## Sample Output
 
