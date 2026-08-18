@@ -11,6 +11,13 @@
 
 ![Portfolio report preview](assets/portfolio-report-preview.png)
 
+## Example Findings
+
+The offline fixture shows the kind of engineering signal this analyzer is designed to surface:
+
+- **Concentrated risk:** CI failures cluster on a specific day and workflow, making the next stabilization target visible instead of leaving the team with a raw run list.
+- **Actionable lifecycle:** recurring fingerprints are labeled `new`, `persistent`, `regressed`, `resolved`, or `suspected_flaky` so teams can separate first-time incidents from repeat regressions.
+- **Trend context:** adjacent and rolling snapshots expose whether failure patterns are improving, stable, or worsening, together with the available data-coverage context.
 ## Portfolio Summary
 
 This project turns GitHub Pull Request and Actions activity into an explainable engineering-efficiency report. It uses a resilient Python REST client, deterministic CI failure diagnosis, stable fingerprints, and continuous multi-window snapshots to produce HTML, Markdown, CSV, PNG, and JSON artifacts. The complete workflow is covered by automated tests and a GitHub Pages deployment, while the offline fixture makes the project reviewable without a token or network access.
